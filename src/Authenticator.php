@@ -34,7 +34,8 @@ class Authenticator {
 		private ?SessionContainer $session = null,
 		private ?RedirectHandler $redirectHandler = null,
 	) {
-		[$this->deploymentId, $this->secret] = explode("_", $clientKey);
+		$this->deploymentId = substr($clientKey, 0, strrpos($clientKey, "_"));
+		$this->secret = substr(strrchr($clientKey, "_"), 1);
 
 		$this->session = $this->session ?? new GlobalSessionContainer();
 		$this->redirectHandler = $redirectHandler ?? new RedirectHandler();
