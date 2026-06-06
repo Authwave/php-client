@@ -8,7 +8,7 @@ class AdminUriTest extends TestCase {
 	public function testPathAccount() {
 		$sut = new AdminUri("example.com");
 		self::assertEquals(
-			"/admin",
+			"/admin/",
 			$sut->getPath()
 		);
 	}

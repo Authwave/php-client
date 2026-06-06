@@ -1,19 +1,14 @@
 <?php
 namespace Authwave;
 
-use Authwave\ResponseData\AbstractResponseData;
-use Authwave\ResponseData\UserData;
+use Authwave\ResponseData\BaseResponseData;
+use Authwave\ResponseData\UserResponseData;
 
 class SessionData {
-	private ?Token $token;
-	private ?AbstractResponseData $data;
-
 	public function __construct(
-		Token $token = null,
-		AbstractResponseData $data = null
+		private readonly ?Token $token = null,
+		private readonly ?BaseResponseData $data = null
 	) {
-		$this->token = $token;
-		$this->data = $data;
 	}
 
 	public function getToken():Token {
@@ -24,7 +19,7 @@ class SessionData {
 		return $this->token;
 	}
 
-	public function getData():AbstractResponseData {
+	public function getData():BaseResponseData {
 		if(!isset($this->data)) {
 			throw new NotLoggedInException();
 		}

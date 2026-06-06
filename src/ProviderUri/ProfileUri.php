@@ -3,7 +3,7 @@ namespace Authwave\ProviderUri;
 
 use Authwave\Token;
 
-class ProfileUri extends AbstractProviderUri {
+class ProfileUri extends BaseProviderUri {
 	public function __construct(
 		Token $token,
 		string $uuid,
@@ -12,7 +12,7 @@ class ProfileUri extends AbstractProviderUri {
 	) {
 		$baseRemoteUri = $this->normaliseBaseUri($baseRemoteUri);
 		parent::__construct($baseRemoteUri);
-		$this->path = "/profile";
+		$this->path = "/profile/";
 		$this->query = $this->buildQuery($token, $uuid);
 	}
 }

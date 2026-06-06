@@ -1,7 +1,7 @@
 <?php
 namespace Authwave\ResponseData;
 
-abstract class AbstractResponseData {
+abstract class BaseResponseData {
 	protected ?string $message;
 
 	public function __construct(string $message = null) {

@@ -1,68 +1,70 @@
 <?php
 namespace Authwave;
 
-use Authwave\ProviderUri\AbstractProviderUri;
+use Authwave\ProviderUri\BaseProviderUri;
 use Authwave\ProviderUri\AdminUri;
 use Authwave\ProviderUri\LoginUri;
 use Authwave\ProviderUri\LogoutUri;
 use Authwave\ProviderUri\ProfileUri;
+use Authwave\ResponseData\UserResponseData;
+use Gt\Cipher\InitVector;
+use Gt\Cipher\Key;
+use Gt\Cipher\Message\EncryptedMessage;
+use Gt\Cipher\Message\PlainTextMessage;
 use Gt\Http\Uri;
+use Gt\Logger\Log;
 use Gt\Session\SessionContainer;
 use Psr\Http\Message\UriInterface;
 
 class Authenticator {
-	const SESSION_KEY = "AUTHWAVE_SESSION";
+	const SESSION_STORE_KEY = "AUTHWAVE_CONSUMER_SESSION";
 	const RESPONSE_QUERY_PARAMETER = "AUTHWAVE_RESPONSE_DATA";
-	const LOGIN_TYPE_DEFAULT = "login-default";
-	const LOGIN_TYPE_ADMIN = "login-admin";
+	const FAKE_EMAIL = "fakelogin@authwave.com";
 
-	private string $clientKey;
-	private string $currentUriPath;
-	private string $authwaveHost;
-	private SessionContainer $session;
 	private SessionData $sessionData;
-	private RedirectHandler $redirectHandler;
+	private User $user;
+	private Uri $currentUri;
+	private readonly string $deploymentId;
+	private readonly string $secret;
 
 	public function __construct(
 		string $clientKey,
-		string $currentUriPath,
-		string $authwaveHost = "login.authwave.com",
-		SessionContainer $session = null,
-		RedirectHandler $redirectHandler = null
+		string|Uri $currentUri,
+		private readonly string $authwaveHost = "login.authwave.com",
+		private ?SessionContainer $session = null,
+		private ?RedirectHandler $redirectHandler = null,
 	) {
-		if(is_null($session)) {
-			$session = new GlobalSessionContainer();
-		}
+		$this->deploymentId = substr($clientKey, 0, strrpos($clientKey, "_"));
+		$this->secret = substr(strrchr($clientKey, "_"), 1);
 
-		if(!$session->contains(self::SESSION_KEY)) {
-// TODO: If there is no Token or UserData in the SessionData, do we even
-// need to store it to the current session at all?
-			$session->set(self::SESSION_KEY, new SessionData());
-		}
-		/** @var SessionData $sessionData*/
-		$sessionData = $session->get(self::SESSION_KEY);
-
-		$this->clientKey = $clientKey;
-		$this->currentUriPath = $currentUriPath;
-		$this->authwaveHost = $authwaveHost;
-		$this->session = $session;
-		$this->sessionData = $sessionData;
+		$this->session = $this->session ?? new GlobalSessionContainer();
 		$this->redirectHandler = $redirectHandler ?? new RedirectHandler();
+		if($sessionData = $this->session->get(SessionData::class)) {
+			$this->sessionData = $sessionData;
+
+			try {
+				$responseData = $this->sessionData->getData();
+				if($responseData instanceof UserResponseData) {
+					$this->user = new User(
+						$responseData->getId(),
+						$responseData->getEmail(),
+						$responseData->getAllFields(),
+					);
+				}
+			}
+			catch(NotLoggedInException) {}
+		}
+
+		if(is_string($currentUri)) {
+			$currentUri = new Uri($currentUri);
+		}
+		$this->currentUri = $currentUri;
 
 		$this->completeAuth();
 	}
 
 	public function isLoggedIn():bool {
-		$userData = null;
-
-		try {
-			$userData = $this->sessionData->getData();
-		}
-		catch(NotLoggedInException $exception) {
-			return false;
-		}
-
-		return isset($userData);
+		return isset($this->user);
 	}
 
 	public function login(Token $token = null):void {
@@ -71,54 +73,92 @@ class Authenticator {
 		}
 
 		if(is_null($token)) {
-			$token = new Token($this->clientKey);
+			Log::debug("Created new CONSUMER token");
+			$token = new Token($this->secret);
 		}
 
 		$this->sessionData = new SessionData($token);
-		$this->session->set(self::SESSION_KEY, $this->sessionData);
-
+		$this->session->set(SessionData::class, $this->sessionData);
 		$this->redirectHandler->redirect($this->getLoginUri($token));
 	}
 
 	public function logout(Token $token = null):void {
+// TODO: Log out needs implementing - ApplicationDeploymentNotFoundException throws!
 		if(is_null($token)) {
-			$token = new Token($this->clientKey);
+			$token = new Token($this->secret);
 		}
 
-		$this->sessionData = new SessionData($token);
-		$this->session->set(self::SESSION_KEY, $this->sessionData);
-
-		$this->redirectHandler->redirect($this->getLogoutUri($token));
+		if(isset($this->user) && $this->user->email === self::FAKE_EMAIL) {
+			$this->session->remove(SessionData::class);
+			unset($this->user);
+		}
+		else {
+			$this->sessionData = new SessionData($token);
+			$this->session->set(SessionData::class, $this->sessionData);
+			$this->session->remove(SessionData::class);
+			$this->redirectHandler->redirect($this->getLogoutUri($token));
+		}
 	}
 
-	public function getUuid():string {
-		$userData = $this->sessionData->getData();
-		return $userData->getUuid();
+	public function fakeLogin(string $userId, ?string $email = null, string $redirectTo = "/"):void {
+		$secretIv = new InitVector();
+		$token = new Token($this->secret, $secretIv);
+		$sessionData = new SessionData($token);
+		$this->session->set(SessionData::class, $sessionData);
+
+		$userData = new UserResponseData(
+			$userId,
+			$email ?? self::FAKE_EMAIL,
+		);
+
+		$this->session->set(
+			SessionData::class,
+			new SessionData($token, $userData)
+		);
+
+		$message = new PlainTextMessage(
+			json_encode([
+				"id" => $userData->getId(),
+				"email" => $userData->getEmail(),
+			]),
+			$secretIv,
+		);
+
+		$cipherText = $message->encrypt(new Key($this->secret));
+		$queryString = http_build_query([
+			"AUTHWAVE_RESPONSE_DATA" => (string)$cipherText,
+		]);
+		if($currentQuery = $this->currentUri->getQuery()) {
+			$queryString .= "&";
+			$queryString .= $currentQuery;
+		}
+		$uri = new Uri("$redirectTo?$queryString");
+		$this->redirectHandler->redirect($uri);
 	}
 
-	public function getEmail():string {
-		$userData = $this->sessionData->getData();
-		return $userData->getEmail();
+	public function getUser():User {
+		if(!isset($this->user)) {
+			throw new NotLoggedInException();
+		}
+
+		return $this->user;
 	}
 
-	public function getField(string $name):?string {
-		$userData = $this->sessionData->getData();
-		return $userData->getField($name);
-	}
-
-	public function getLoginUri(Token $token):AbstractProviderUri {
+	public function getLoginUri(Token $token):BaseProviderUri {
 		return new LoginUri(
 			$token,
-			$this->currentUriPath,
-			$this->authwaveHost
+			$this->currentUri,
+			$this->deploymentId,
+			$this->authwaveHost,
 		);
 	}
 
-	private function getLogoutUri(Token $token):AbstractProviderUri {
+	private function getLogoutUri(Token $token):BaseProviderUri {
 		return new LogoutUri(
 			$token,
-			$this->currentUriPath,
-			$this->authwaveHost
+			$this->currentUri,
+			$this->deploymentId,
+			$this->authwaveHost,
 		);
 	}
 
@@ -128,40 +168,59 @@ class Authenticator {
 
 	public function getProfileUri(Token $token = null):UriInterface {
 		if(is_null($token)) {
-			$token = new Token($this->clientKey);
+			$token = new Token($this->secret);
 		}
 
 		return new ProfileUri(
 			$token,
-			$this->getUuid(),
-			$this->currentUriPath,
+			$this->user->id,
+			$this->currentUri,
 			$this->authwaveHost
 		);
 	}
 
 	private function completeAuth():void {
-		$responseCipher = $this->getResponseCipher();
+		$queryData = $this->getQueryData();
 
-		if(!$responseCipher) {
+		if(!$queryData) {
+			return;
+		}
+
+		if(!isset($this->sessionData)) {
+			$this->tidyResponseData();
 			return;
 		}
 
 		$token = $this->sessionData->getToken();
-		$userData = $token->decryptResponseCipher($responseCipher);
+		$secretSessionIv = $token->getSecretIv();
+		$encrypted = new EncryptedMessage($queryData, $secretSessionIv);
+		$key = new Key($this->secret);
+		$decrypted = $encrypted->decrypt($key);
+		$data = json_decode($decrypted);
+		$userData = new UserResponseData(
+			$data->{"id"},
+			$data->{"email"},
+			$data->{"kvp"} ?? [],
+		);
+
 		$this->session->set(
-			self::SESSION_KEY,
+			SessionData::class,
 			new SessionData($token, $userData)
 		);
 
+		$this->tidyResponseData();
+	}
+
+	private function tidyResponseData():void {
 		$this->redirectHandler->redirect(
-			(new Uri($this->currentUriPath))
-			->withoutQueryValue(self::RESPONSE_QUERY_PARAMETER)
+			(new Uri($this->currentUri))
+				->withoutQueryValue(self::RESPONSE_QUERY_PARAMETER)
 		);
 	}
 
-	private function getResponseCipher():?string {
+	private function getQueryData():?string {
 		$queryString = parse_url(
-			$this->currentUriPath,
+			$this->currentUri,
 			PHP_URL_QUERY
 		);
 		if(!$queryString) {

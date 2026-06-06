@@ -8,7 +8,7 @@ To use this repository, your application must be registered to obtain a client k
 Basic usage
 -----------
 
-With the following PHP code below, you can display a log in button that, when clicked, changes to a log out button and displays a greeting to the logged in user.
+With the following PHP code below, you can display a login button that, when clicked, changes to a logout button and displays a greeting to the logged-in user.
 
 ```php
 <?php
@@ -23,7 +23,7 @@ define("CLIENT_KEY", "1234567890abcdef");
 // Authentication steps passed via the query string from the remote provider.
 $auth = new Authenticator(
 	CLIENT_KEY,
-	$_SERVER["REQUEST_URI"]
+	$_SERVER["REQUEST_URI"],
 );
 
 // Handle authentication login/logout action via the querystring:
@@ -41,6 +41,11 @@ elseif(isset($_GET["logout"])) {
 // Authentication is handled by Authwave, so you can trust "isLoggedIn"
 // as a mechanism for protecting your sensitive information.
 if($auth->isLoggedIn()) {
+// Available methods:
+// $auth->getId(); // a unique string in ULID format - use this to store in your database
+// $auth->getEmail(); // the current email of the user (could change)
+// $auth->getField($name); // any extra field your application is configured to take upon user signup 
+	
 	echo <<<HTML
 		<p>You are logged in as <strong>{$auth->getEmail()}</strong></p>
 		<p><a href="?logout">Log out</a></p>
@@ -52,4 +57,13 @@ else {
 		<p><a href="?login">Log in</a></p>
 	HTML;
 }
+```
+
+Running unit tests
+------------------
+
+From the root directory, unit tests can be ran with the following command:
+
+```bash
+vendor/bin/phpunit test/phpunit --coverage-clover test/phpunit/_coverage --whitelist src
 ```
