@@ -34,4 +34,16 @@ class SessionDataTest extends TestCase {
 		$sut = new SessionData($token, $userData);
 		self::assertSame($userData, $sut->getData());
 	}
+
+	public function testAuthenticationCallbackStateDefaultsToFalse():void {
+		self::assertFalse((new SessionData())->hasInvokedAuthenticationCallback());
+	}
+
+	public function testAuthenticationCallbackStateCanBePersisted():void {
+		$sut = new SessionData();
+
+		$sut->markAuthenticationCallbackInvoked();
+
+		self::assertTrue($sut->hasInvokedAuthenticationCallback());
+	}
 }

@@ -5,9 +5,11 @@ use Authwave\ResponseData\BaseResponseData;
 use Authwave\ResponseData\UserResponseData;
 
 class SessionData {
+	private bool $callbackInvoked = false;
+
 	public function __construct(
 		private readonly ?Token $token = null,
-		private readonly ?BaseResponseData $data = null
+		private readonly ?BaseResponseData $data = null,
 	) {
 	}
 
@@ -25,5 +27,13 @@ class SessionData {
 		}
 
 		return $this->data;
+	}
+
+	public function hasInvokedAuthenticationCallback():bool {
+		return $this->callbackInvoked;
+	}
+
+	public function markAuthenticationCallbackInvoked():void {
+		$this->callbackInvoked = true;
 	}
 }

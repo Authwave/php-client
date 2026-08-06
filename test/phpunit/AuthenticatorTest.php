@@ -348,13 +348,17 @@ class AuthenticatorTest extends TestCase {
 		$_SESSION = [
 			SessionData::class => $sessionData,
 		];
+		$authenticatedUser = null;
 
 		new Authenticator(
 			"deployment_$keyBytes",
 			$currentUri,
 			LoginUri::DEFAULT_BASE_REMOTE_URI,
 			null,
-			$redirectHandler
+			$redirectHandler,
+			onAuthenticated: function(AuthUser $user) use (&$authenticatedUser):void {
+				$authenticatedUser = $user;
+			},
 		);
 
 		/** @var SessionData $newSessionData */
@@ -368,6 +372,59 @@ class AuthenticatorTest extends TestCase {
 			BaseResponseData::class,
 			$newSessionData->getData()
 		);
+		self::assertTrue($newSessionData->hasInvokedAuthenticationCallback());
+		self::assertInstanceOf(AuthUser::class, $authenticatedUser);
+		self::assertSame("person@example.com", $authenticatedUser->email);
+	}
+
+	public function testAuthenticationCallbackIsAtMostOnceWhenItThrows():void {
+		$keyBytes = str_repeat("0", SODIUM_CRYPTO_SECRETBOX_KEYBYTES);
+		$ivBytes = str_repeat("1", SODIUM_CRYPTO_SECRETBOX_NONCEBYTES);
+		$encryptedMessage = sodium_crypto_secretbox(
+			json_encode([
+				"id" => "user-id",
+				"email" => "person@example.com",
+			]),
+			$ivBytes,
+			$keyBytes,
+		);
+		$currentUri = "/?" . Authenticator::RESPONSE_QUERY_PARAMETER
+			. "=" . urlencode(base64_encode($encryptedMessage));
+		$iv = self::createStub(InitVector::class);
+		$iv->method("getBytes")->willReturn($ivBytes);
+		$token = self::createStub(Token::class);
+		$token->method("getSecretIv")->willReturn($iv);
+		$_SESSION = [SessionData::class => new SessionData($token)];
+		$callbackCount = 0;
+		$callback = function(AuthUser $user) use (&$callbackCount):void {
+			$callbackCount++;
+			throw new \RuntimeException("Application callback failed");
+		};
+
+		try {
+			new Authenticator(
+				"deployment_$keyBytes",
+				$currentUri,
+				redirectHandler: self::createStub(RedirectHandler::class),
+				onAuthenticated: $callback,
+			);
+			self::fail("Expected the application callback to throw");
+		}
+		catch(\RuntimeException $exception) {
+			self::assertSame("Application callback failed", $exception->getMessage());
+		}
+
+		self::assertTrue($_SESSION[SessionData::class]->hasInvokedAuthenticationCallback());
+		$redirectHandler = self::createMock(RedirectHandler::class);
+		$redirectHandler->expects(self::once())->method("redirect");
+		new Authenticator(
+			"deployment_$keyBytes",
+			$currentUri,
+			redirectHandler: $redirectHandler,
+			onAuthenticated: $callback,
+		);
+
+		self::assertSame(1, $callbackCount);
 	}
 
 	public function testLoginDoesNothingWhenAlreadyLoggedIn() {

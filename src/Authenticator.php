@@ -1,6 +1,7 @@
 <?php
 namespace Authwave;
 
+use Closure;
 use Authwave\ProviderUri\BaseProviderUri;
 use Authwave\ProviderUri\AdminUri;
 use Authwave\ProviderUri\LoginUri;
@@ -25,6 +26,7 @@ class Authenticator {
 	private User $user;
 	private UriInterface $currentUriPath;
 	private UriInterface $returnUri;
+	private readonly ?Closure $onAuthenticated;
 	private readonly string $deploymentId;
 	private readonly string $secret;
 
@@ -34,7 +36,11 @@ class Authenticator {
 		private readonly string $authwaveHost = "login.authwave.com",
 		private ?SessionContainer $session = null,
 		private ?RedirectHandler $redirectHandler = null,
+		?callable $onAuthenticated = null,
 	) {
+		$this->onAuthenticated = is_null($onAuthenticated)
+			? null
+			: Closure::fromCallable($onAuthenticated);
 		$this->deploymentId = substr($clientKey, 0, strrpos($clientKey, "_"));
 		$this->secret = substr(strrchr($clientKey, "_"), 1);
 
@@ -133,10 +139,6 @@ class Authenticator {
 		$queryString = http_build_query([
 			"AUTHWAVE_RESPONSE_DATA" => (string)$cipherText,
 		]);
-		if($currentQuery = $this->currentUriPath->getQuery()) {
-			$queryString .= "&";
-			$queryString .= $currentQuery;
-		}
 		$uri = new Uri("$redirectTo?$queryString");
 		$this->redirectHandler->redirect($uri);
 	}
@@ -221,11 +223,23 @@ class Authenticator {
 			$data->{"email"},
 			$data->{"kvp"} ?? [],
 		);
-
-		$this->session->set(
-			SessionData::class,
-			new SessionData($token, $userData)
+		$this->user = new User(
+			$userData->getId(),
+			$userData->getEmail(),
+			$userData->getAllFields(),
 		);
+		$wasInvoked = $this->sessionData
+			->hasInvokedAuthenticationCallback();
+
+		$newSessionData = new SessionData($token, $userData);
+		if($wasInvoked || isset($this->onAuthenticated)) {
+			$newSessionData->markAuthenticationCallbackInvoked();
+		}
+		$this->session->set(SessionData::class, $newSessionData);
+
+		if(isset($this->onAuthenticated) && !$wasInvoked) {
+			($this->onAuthenticated)($this->user);
+		}
 
 		$this->tidyResponseData();
 	}
