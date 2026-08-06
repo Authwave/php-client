@@ -3,7 +3,7 @@
 	"description": "PHP client library to implement Authwave in your application",
 
 	"require": {
-		"php": ">=8.1",
+		"php": ">=8.4",
 		"ext-sodium": "*",
 		"phpgt/cipher": "^1.0",
 		"phpgt/http": "1.*",
