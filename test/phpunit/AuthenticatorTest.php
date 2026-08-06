@@ -560,7 +560,7 @@ class AuthenticatorTest extends TestCase {
 		self::assertArrayNotHasKey(SessionData::class, $_SESSION);
 	}
 
-	public function testFakeLoginStoresUserAndPreservesCurrentQuery():void {
+	public function testFakeLoginStoresUserAndRemovesCurrentQuery():void {
 		$_SESSION = [];
 		$redirectHandler = self::createMock(RedirectHandler::class);
 		$redirectHandler->expects(self::once())
@@ -568,7 +568,7 @@ class AuthenticatorTest extends TestCase {
 			->with(self::callback(function(UriInterface $uri):bool {
 				parse_str($uri->getQuery(), $query);
 				return $uri->getPath() === "/destination"
-					&& $query["filter"] === "active"
+					&& !isset($query["filter"])
 					&& isset($query[Authenticator::RESPONSE_QUERY_PARAMETER]);
 			}));
 		$sut = new Authenticator(
