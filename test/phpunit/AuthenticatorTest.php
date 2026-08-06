@@ -2,6 +2,7 @@
 namespace Authwave\Test;
 
 use Authwave\Authenticator;
+use Authwave\AuthUser;
 use Authwave\NotLoggedInException;
 use Authwave\ProviderUri\BaseProviderUri;
 use Authwave\ProviderUri\LoginUri;
@@ -15,6 +16,7 @@ use Gt\Cipher\CipherText;
 use Gt\Cipher\InitVector;
 use Gt\Http\Uri;
 use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
+use PHPUnit\Framework\Attributes\WithoutErrorHandler;
 use PHPUnit\Framework\TestCase;
 use Psr\Http\Message\UriInterface;
 
@@ -54,6 +56,30 @@ class AuthenticatorTest extends TestCase {
 			"/"
 		);
 		self::assertTrue($sut->isLoggedIn());
+	}
+
+	public function testSessionWithoutResponseDataIsNotLoggedIn():void {
+		$_SESSION = [SessionData::class => new SessionData(new Token(str_repeat("s", 32)))];
+
+		$sut = new Authenticator("deployment_" . str_repeat("s", 32), "/");
+
+		self::assertFalse($sut->isLoggedIn());
+	}
+
+	public function testLoginCreatesAndStoresDefaultToken():void {
+		$_SESSION = [];
+		$redirectHandler = self::createMock(RedirectHandler::class);
+		$redirectHandler->expects(self::once())->method("redirect");
+		$sut = new Authenticator(
+			"deployment_" . str_repeat("s", 32),
+			"/",
+			redirectHandler: $redirectHandler,
+		);
+
+		$sut->login();
+
+		self::assertInstanceOf(SessionData::class, $_SESSION[SessionData::class]);
+		self::assertInstanceOf(Token::class, $_SESSION[SessionData::class]->getToken());
 	}
 
 	public function testLoginRedirectsWithCorrectQueryString() {
@@ -120,7 +146,7 @@ class AuthenticatorTest extends TestCase {
 			"test-key",
 			"/"
 		);
-		self::assertEquals($exampleId, $sut->getUser()->id);
+		self::assertEquals($exampleId, $sut->getAuthUser()->id);
 	}
 
 	public function testGetEmailThrowsExceptionWhenNotLoggedIn() {
@@ -130,7 +156,7 @@ class AuthenticatorTest extends TestCase {
 			"/"
 		);
 		self::expectException(NotLoggedInException::class);
-		$sut->getUser()->email;
+		$sut->getAuthUser()->email;
 	}
 
 	public function testGetEmail() {
@@ -150,7 +176,52 @@ class AuthenticatorTest extends TestCase {
 			"test-key",
 			"/"
 		);
-		self::assertEquals($expectedEmail, $sut->getUser()->email);
+		self::assertEquals($expectedEmail, $sut->getAuthUser()->email);
+	}
+
+	#[WithoutErrorHandler]
+	public function testGetUserEmitsDeprecationAndReturnsCompatibilityUser():void {
+		$_SESSION = [
+			SessionData::class => new SessionData(
+				new Token(str_repeat("s", 32)),
+				new UserResponseData("user-id", "person@example.com"),
+			),
+		];
+		$sut = new Authenticator("deployment_" . str_repeat("s", 32), "/");
+		$deprecation = null;
+		set_error_handler(function(int $level, string $message) use (&$deprecation):bool {
+			$deprecation = [$level, $message];
+			return true;
+		});
+
+		try {
+			$user = $sut->getUser();
+		}
+		finally {
+			restore_error_handler();
+		}
+
+		self::assertSame([
+			E_USER_DEPRECATED,
+			"Authenticator::getUser() is deprecated; use getAuthUser() instead.",
+		], $deprecation);
+		self::assertInstanceOf(AuthUser::class, $user);
+		self::assertSame($user, $sut->getAuthUser());
+	}
+
+	#[WithoutErrorHandler]
+	public function testDeprecatedGetUserStillThrowsWhenNotLoggedIn():void {
+		$_SESSION = [];
+		$sut = new Authenticator("deployment_" . str_repeat("s", 32), "/");
+		set_error_handler(static fn():bool => true);
+
+		try {
+			self::expectException(NotLoggedInException::class);
+			$sut->getUser();
+		}
+		finally {
+			restore_error_handler();
+		}
 	}
 
 	public function testCompleteAuthNotAffectedByQueryString() {
@@ -197,7 +268,7 @@ class AuthenticatorTest extends TestCase {
 			null,
 			$redirectHandler,
 		);
-		$sut->getUser();
+		$sut->getAuthUser();
 	}
 
 // When the remote provider redirects back to the client application, a query
@@ -307,7 +378,7 @@ class AuthenticatorTest extends TestCase {
 			"/"
 		);
 		self::expectException(NotLoggedInException::class);
-		$sut->getUser()->id;
+		$sut->getAuthUser()->id;
 	}
 
 	public function testLogoutCallsLogoutUri() {
@@ -354,6 +425,86 @@ class AuthenticatorTest extends TestCase {
 			->willReturn($iv);
 		$sut->logout($token);
 		self::assertNotEmpty($_SESSION);
+	}
+
+	public function testLogoutCreatesDefaultToken():void {
+		$_SESSION = [];
+		$redirectHandler = self::createMock(RedirectHandler::class);
+		$redirectHandler->expects(self::once())->method("redirect");
+		$sut = new Authenticator(
+			"deployment_" . str_repeat("s", 32),
+			"/",
+			redirectHandler: $redirectHandler,
+		);
+
+		$sut->logout();
+
+		self::assertInstanceOf(Token::class, $_SESSION[SessionData::class]->getToken());
+	}
+
+	public function testLogoutFakeUserClearsSessionWithoutRedirect():void {
+		$token = new Token(str_repeat("s", 32));
+		$_SESSION = [
+			SessionData::class => new SessionData(
+				$token,
+				new UserResponseData("user-id", Authenticator::FAKE_EMAIL),
+			),
+		];
+		$redirectHandler = self::createMock(RedirectHandler::class);
+		$redirectHandler->expects(self::never())->method("redirect");
+		$sut = new Authenticator(
+			"deployment_" . str_repeat("s", 32),
+			"/",
+			redirectHandler: $redirectHandler,
+		);
+
+		$sut->logout();
+
+		self::assertFalse($sut->isLoggedIn());
+		self::assertArrayNotHasKey(SessionData::class, $_SESSION);
+	}
+
+	public function testFakeLoginStoresUserAndPreservesCurrentQuery():void {
+		$_SESSION = [];
+		$redirectHandler = self::createMock(RedirectHandler::class);
+		$redirectHandler->expects(self::once())
+			->method("redirect")
+			->with(self::callback(function(UriInterface $uri):bool {
+				parse_str($uri->getQuery(), $query);
+				return $uri->getPath() === "/destination"
+					&& $query["filter"] === "active"
+					&& isset($query[Authenticator::RESPONSE_QUERY_PARAMETER]);
+			}));
+		$sut = new Authenticator(
+			"deployment_" . str_repeat("s", 32),
+			"/current?filter=active",
+			redirectHandler: $redirectHandler,
+		);
+
+		$sut->fakeLogin("user-id", redirectTo: "/destination");
+
+		$userData = $_SESSION[SessionData::class]->getData();
+		self::assertSame("user-id", $userData->getId());
+		self::assertSame(Authenticator::FAKE_EMAIL, $userData->getEmail());
+	}
+
+	public function testGetProfileUriWithGeneratedAndProvidedTokens():void {
+		$_SESSION = [
+			SessionData::class => new SessionData(
+				new Token(str_repeat("s", 32)),
+				new UserResponseData("user-id", "person@example.com"),
+			),
+		];
+		$sut = new Authenticator("deployment_" . str_repeat("s", 32), "/account");
+
+		$generatedTokenUri = $sut->getProfileUri();
+		$providedTokenUri = $sut->getProfileUri(new Token(str_repeat("s", 32)));
+
+		self::assertSame("/profile/", $generatedTokenUri->getPath());
+		parse_str($generatedTokenUri->getQuery(), $query);
+		self::assertSame("user-id", $query[BaseProviderUri::QUERY_STRING_DEPLOYMENT_ID]);
+		self::assertSame(bin2hex("/account"), $query[BaseProviderUri::QUERY_STRING_CURRENT_URI]);
+		self::assertSame("/profile/", $providedTokenUri->getPath());
 	}
 
 	public function testLoginRedirects() {

@@ -93,4 +93,24 @@ class TokenTest extends TestCase {
 		self::assertEquals($uuid, $userData->getId());
 		self::assertEquals($email, $userData->getEmail());
 	}
+
+	public function testDecryptResponseCipherRejectsInvalidFieldTypes():void {
+		$keyBytes = str_repeat("0", SODIUM_CRYPTO_SECRETBOX_KEYBYTES);
+		$ivBytes = str_repeat("1", SODIUM_CRYPTO_SECRETBOX_NONCEBYTES);
+		$cipher = sodium_crypto_secretbox(
+			json_encode([
+				"id" => 123,
+				"email" => "person@example.com",
+				"fields" => "not-an-array",
+			]),
+			$ivBytes,
+			$keyBytes,
+		);
+		$iv = self::createStub(InitVector::class);
+		$iv->method("getBytes")->willReturn($ivBytes);
+		$sut = new Token($keyBytes, iv: $iv);
+
+		self::expectException(InvalidUserDataSerializationException::class);
+		$sut->decode(base64_encode($cipher));
+	}
 }

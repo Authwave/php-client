@@ -135,7 +135,21 @@ class Authenticator {
 		$this->redirectHandler->redirect($uri);
 	}
 
+	public function getAuthUser():AuthUser {
+		if(!isset($this->user)) {
+			throw new NotLoggedInException();
+		}
+
+		return $this->user;
+	}
+
+	/** @deprecated Use getAuthUser() instead. */
 	public function getUser():User {
+		trigger_error(
+			"Authenticator::getUser() is deprecated; use getAuthUser() instead.",
+			E_USER_DEPRECATED,
+		);
+
 		if(!isset($this->user)) {
 			throw new NotLoggedInException();
 		}
