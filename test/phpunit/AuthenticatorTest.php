@@ -14,9 +14,11 @@ use Authwave\ResponseData\UserResponseData;
 use Gt\Cipher\CipherText;
 use Gt\Cipher\InitVector;
 use Gt\Http\Uri;
+use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
 use PHPUnit\Framework\TestCase;
 use Psr\Http\Message\UriInterface;
 
+#[AllowMockObjectsWithoutExpectations]
 class AuthenticatorTest extends TestCase {
 	public function testConstructWithDefaultSessionNotStarted() {
 		self::expectException(SessionNotStartedException::class);
@@ -57,7 +59,8 @@ class AuthenticatorTest extends TestCase {
 	public function testLoginRedirectsWithCorrectQueryString() {
 		$_SESSION = [];
 
-		$key = uniqid("key-");
+		$deploymentId = uniqid("deployment-");
+		$key = $deploymentId . "_secret";
 		$currentPath = uniqid("/path/");
 
 		$cipherString = "example-cipher";
@@ -77,6 +80,7 @@ class AuthenticatorTest extends TestCase {
 
 		$expectedQueryParts = [
 			LoginUri::QUERY_STRING_CIPHER => (string)$cipher,
+			LoginUri::QUERY_STRING_DEPLOYMENT_ID => $deploymentId,
 			LoginUri::QUERY_STRING_INIT_VECTOR => $ivString,
 			LoginUri::QUERY_STRING_CURRENT_URI => bin2hex($currentPath),
 		];
@@ -184,10 +188,14 @@ class AuthenticatorTest extends TestCase {
 			. "=0123456789abcdef";
 
 		$_SESSION = [];
+		$redirectHandler = self::createStub(RedirectHandler::class);
 		self::expectException(NotLoggedInException::class);
 		$sut = new Authenticator(
 			"test-key",
-			$currentUri
+			$currentUri,
+			LoginUri::DEFAULT_BASE_REMOTE_URI,
+			null,
+			$redirectHandler,
 		);
 		$sut->getUser();
 	}
@@ -213,7 +221,7 @@ class AuthenticatorTest extends TestCase {
 		$currentUri = "/my-page?filter=example&"
 			. Authenticator::RESPONSE_QUERY_PARAMETER
 			. "="
-			. base64_encode($encryptedMessage);
+			. urlencode(base64_encode($encryptedMessage));
 
 		$redirectHandler = self::createMock(RedirectHandler::class);
 		$redirectHandler->expects(self::once())
@@ -237,7 +245,7 @@ class AuthenticatorTest extends TestCase {
 		];
 
 		new Authenticator(
-			$keyBytes,
+			"deployment_$keyBytes",
 			$currentUri,
 			LoginUri::DEFAULT_BASE_REMOTE_URI,
 			null,

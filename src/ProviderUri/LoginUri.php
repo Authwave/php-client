@@ -2,7 +2,6 @@
 namespace Authwave\ProviderUri;
 
 use Authwave\Token;
-use Gt\Http\Uri;
 
 /**
  * The AuthUri class represents the Uri used to redirect the user agent to the

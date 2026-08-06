@@ -3,11 +3,11 @@ namespace Authwave;
 
 use Authwave\ResponseData\BaseResponseData;
 use Authwave\ResponseData\UserResponseData;
-use Gt\Cipher\CipherText;
-use Gt\Cipher\InitVector;
-use Gt\Cipher\Key;
-use Gt\Cipher\Message\EncryptedMessage;
-use Gt\Cipher\Message\PlainTextMessage;
+use GT\Cipher\CipherText;
+use GT\Cipher\InitVector;
+use GT\Cipher\Key;
+use GT\Cipher\Message\EncryptedMessage;
+use GT\Cipher\Message\PlainTextMessage;
 
 class Token {
 	private Key $key;
@@ -16,8 +16,8 @@ class Token {
 
 	public function __construct(
 		string $secret,
-		InitVector $sessionIv = null,
-		InitVector $iv = null,
+		?InitVector $sessionIv = null,
+		?InitVector $iv = null,
 	) {
 		$this->key = new Key($secret);
 		$this->secretSessionIv = $sessionIv ?? new InitVector();
@@ -57,19 +57,24 @@ class Token {
 		);
 		$decrypted = $encryptedMessage->decrypt($this->key);
 
-		if(!$decrypted) {
-			throw new ResponseCipherDecryptionException();
+		$data = json_decode((string)$decrypted);
+		if(!is_object($data)
+		|| !isset($data->email)
+		|| !is_string($data->email)
+		|| (!isset($data->uuid) && !isset($data->id))) {
+			throw new InvalidUserDataSerializationException();
 		}
 
-		$data = json_decode($decrypted);
-		if($data === null) {
+		$id = $data->uuid ?? $data->id;
+		$fields = $data->fields ?? [];
+		if(!is_string($id) || !is_array($fields)) {
 			throw new InvalidUserDataSerializationException();
 		}
 
 		return new UserResponseData(
-			$data->{"uuid"} ?? $data->{"id"},
-			$data->{"email"},
-			$data->{"fields"} ?? []
+			$id,
+			$data->email,
+			$fields,
 		);
 	}
 }

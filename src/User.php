@@ -2,6 +2,7 @@
 namespace Authwave;
 
 class User {
+	/** @param array<string, string> $kvp */
 	public function __construct(
 		public readonly string $id,
 		public readonly string $email,
@@ -12,6 +13,7 @@ class User {
 		return $this->kvp[$key] ?? null;
 	}
 
+	/** @return array<string, string> */
 	public function getKvp():array {
 		return $this->kvp;
 	}

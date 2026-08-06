@@ -3,7 +3,7 @@ namespace Authwave\ProviderUri;
 
 use Authwave\InsecureProtocolException;
 use Authwave\Token;
-use Gt\Http\Uri;
+use GT\Http\Uri;
 
 abstract class BaseProviderUri extends Uri {
 	const DEFAULT_BASE_REMOTE_URI = "login.authwave.com";

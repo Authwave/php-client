@@ -7,13 +7,13 @@ use Authwave\ProviderUri\LoginUri;
 use Authwave\ProviderUri\LogoutUri;
 use Authwave\ProviderUri\ProfileUri;
 use Authwave\ResponseData\UserResponseData;
-use Gt\Cipher\InitVector;
-use Gt\Cipher\Key;
-use Gt\Cipher\Message\EncryptedMessage;
-use Gt\Cipher\Message\PlainTextMessage;
-use Gt\Http\Uri;
+use GT\Cipher\InitVector;
+use GT\Cipher\Key;
+use GT\Cipher\Message\EncryptedMessage;
+use GT\Cipher\Message\PlainTextMessage;
+use GT\Http\Uri;
 use Gt\Logger\Log;
-use Gt\Session\SessionContainer;
+use GT\Session\SessionContainer;
 use Psr\Http\Message\UriInterface;
 
 class Authenticator {
@@ -67,7 +67,7 @@ class Authenticator {
 		return isset($this->user);
 	}
 
-	public function login(Token $token = null):void {
+	public function login(?Token $token = null):void {
 		if($this->isLoggedIn()) {
 			return;
 		}
@@ -82,7 +82,7 @@ class Authenticator {
 		$this->redirectHandler->redirect($this->getLoginUri($token));
 	}
 
-	public function logout(Token $token = null):void {
+	public function logout(?Token $token = null):void {
 // TODO: Log out needs implementing - ApplicationDeploymentNotFoundException throws!
 		if(is_null($token)) {
 			$token = new Token($this->secret);
@@ -95,7 +95,6 @@ class Authenticator {
 		else {
 			$this->sessionData = new SessionData($token);
 			$this->session->set(SessionData::class, $this->sessionData);
-			$this->session->remove(SessionData::class);
 			$this->redirectHandler->redirect($this->getLogoutUri($token));
 		}
 	}
@@ -166,7 +165,7 @@ class Authenticator {
 		return new AdminUri($this->authwaveHost);
 	}
 
-	public function getProfileUri(Token $token = null):UriInterface {
+	public function getProfileUri(?Token $token = null):UriInterface {
 		if(is_null($token)) {
 			$token = new Token($this->secret);
 		}

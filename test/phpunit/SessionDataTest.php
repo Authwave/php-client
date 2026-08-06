@@ -5,8 +5,10 @@ use Authwave\NotLoggedInException;
 use Authwave\SessionData;
 use Authwave\Token;
 use Authwave\ResponseData\UserResponseData;
+use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
 use PHPUnit\Framework\TestCase;
 
+#[AllowMockObjectsWithoutExpectations]
 class SessionDataTest extends TestCase {
 	public function testGetTokenNull() {
 		$sut = new SessionData();

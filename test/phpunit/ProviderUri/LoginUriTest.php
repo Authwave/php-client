@@ -5,9 +5,11 @@ use Authwave\ProviderUri\LoginUri;
 use Authwave\Token;
 use Gt\Cipher\CipherText;
 use Gt\Cipher\InitVector;
+use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
 use PHPUnit\Framework\TestCase;
 use Psr\Http\Message\UriInterface;
 
+#[AllowMockObjectsWithoutExpectations]
 class LoginUriTest extends TestCase {
 	public function testQueryString() {
 		$cipherString = str_repeat("f", 16);
@@ -29,7 +31,8 @@ class LoginUriTest extends TestCase {
 		$sut = new LoginUri(
 			$token,
 			$returnPath,
-			$baseUri
+			"deployment-id",
+			(string)$baseUri,
 		);
 		parse_str($sut->getQuery(), $queryParts);
 

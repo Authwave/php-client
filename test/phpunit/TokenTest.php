@@ -8,8 +8,10 @@ use Authwave\ResponseData\UserResponseData;
 use Gt\Cipher\InitVector;
 use Gt\Cipher\Key;
 use Gt\Cipher\Message\DecryptionFailureException;
+use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
 use PHPUnit\Framework\TestCase;
 
+#[AllowMockObjectsWithoutExpectations]
 class TokenTest extends TestCase {
 	public function testGenerateRequestCipher_sameForSameToken():void {
 		$token = new Token(str_repeat("0", 32));
