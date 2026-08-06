@@ -239,6 +239,24 @@ class AuthenticatorTest extends TestCase {
 		);
 	}
 
+	public function testAcceptsPsrUriInterfaceForCurrentUriPath():void {
+		$_SESSION = [];
+		$currentUriPath = self::createStub(UriInterface::class);
+		$currentUriPath->method("__toString")->willReturn("/psr-path");
+		$currentUriPath->method("getQuery")->willReturn("");
+		$sut = new Authenticator("deployment_secret", $currentUriPath);
+		$token = self::createStub(Token::class);
+		$token->method("generateRequestCipher")->willReturn(self::createStub(CipherText::class));
+		$token->method("getIv")->willReturn(self::createStub(InitVector::class));
+
+		parse_str($sut->getLoginUri($token)->getQuery(), $query);
+
+		self::assertSame(
+			bin2hex("/psr-path"),
+			$query[BaseProviderUri::QUERY_STRING_CURRENT_URI],
+		);
+	}
+
 	public function testGetAdminUri() {
 		$_SESSION = [];
 		$auth = new Authenticator(

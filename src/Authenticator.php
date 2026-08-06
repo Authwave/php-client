@@ -23,13 +23,13 @@ class Authenticator {
 
 	private SessionData $sessionData;
 	private User $user;
-	private Uri $currentUri;
+	private UriInterface $currentUriPath;
 	private readonly string $deploymentId;
 	private readonly string $secret;
 
 	public function __construct(
 		string $clientKey,
-		string|Uri $currentUri,
+		string|UriInterface $currentUriPath,
 		private readonly string $authwaveHost = "login.authwave.com",
 		private ?SessionContainer $session = null,
 		private ?RedirectHandler $redirectHandler = null,
@@ -55,10 +55,10 @@ class Authenticator {
 			catch(NotLoggedInException) {}
 		}
 
-		if(is_string($currentUri)) {
-			$currentUri = new Uri($currentUri);
+		if(is_string($currentUriPath)) {
+			$currentUriPath = new Uri($currentUriPath);
 		}
-		$this->currentUri = $currentUri;
+		$this->currentUriPath = $currentUriPath;
 
 		$this->completeAuth();
 	}
@@ -127,7 +127,7 @@ class Authenticator {
 		$queryString = http_build_query([
 			"AUTHWAVE_RESPONSE_DATA" => (string)$cipherText,
 		]);
-		if($currentQuery = $this->currentUri->getQuery()) {
+		if($currentQuery = $this->currentUriPath->getQuery()) {
 			$queryString .= "&";
 			$queryString .= $currentQuery;
 		}
@@ -160,7 +160,7 @@ class Authenticator {
 	public function getLoginUri(Token $token):BaseProviderUri {
 		return new LoginUri(
 			$token,
-			$this->currentUri,
+			(string)$this->currentUriPath,
 			$this->deploymentId,
 			$this->authwaveHost,
 		);
@@ -169,7 +169,7 @@ class Authenticator {
 	private function getLogoutUri(Token $token):BaseProviderUri {
 		return new LogoutUri(
 			$token,
-			$this->currentUri,
+			(string)$this->currentUriPath,
 			$this->deploymentId,
 			$this->authwaveHost,
 		);
@@ -187,7 +187,7 @@ class Authenticator {
 		return new ProfileUri(
 			$token,
 			$this->user->id,
-			$this->currentUri,
+			(string)$this->currentUriPath,
 			$this->authwaveHost
 		);
 	}
@@ -226,16 +226,13 @@ class Authenticator {
 
 	private function tidyResponseData():void {
 		$this->redirectHandler->redirect(
-			(new Uri($this->currentUri))
+			(new Uri((string)$this->currentUriPath))
 				->withoutQueryValue(self::RESPONSE_QUERY_PARAMETER)
 		);
 	}
 
 	private function getQueryData():?string {
-		$queryString = parse_url(
-			$this->currentUri,
-			PHP_URL_QUERY
-		);
+		$queryString = $this->currentUriPath->getQuery();
 		if(!$queryString) {
 			return null;
 		}
