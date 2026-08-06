@@ -24,6 +24,7 @@ class Authenticator {
 	private SessionData $sessionData;
 	private User $user;
 	private UriInterface $currentUriPath;
+	private UriInterface $returnUri;
 	private readonly string $deploymentId;
 	private readonly string $secret;
 
@@ -59,8 +60,13 @@ class Authenticator {
 			$currentUriPath = new Uri($currentUriPath);
 		}
 		$this->currentUriPath = $currentUriPath;
+		$this->returnUri = $currentUriPath;
 
 		$this->completeAuth();
+	}
+
+	public function setReturnUri(string $uri):void {
+		$this->returnUri = new Uri($uri);
 	}
 
 	public function isLoggedIn():bool {
@@ -160,7 +166,7 @@ class Authenticator {
 	public function getLoginUri(Token $token):BaseProviderUri {
 		return new LoginUri(
 			$token,
-			(string)$this->currentUriPath,
+			(string)$this->returnUri,
 			$this->deploymentId,
 			$this->authwaveHost,
 		);
@@ -169,7 +175,7 @@ class Authenticator {
 	private function getLogoutUri(Token $token):BaseProviderUri {
 		return new LogoutUri(
 			$token,
-			(string)$this->currentUriPath,
+			(string)$this->returnUri,
 			$this->deploymentId,
 			$this->authwaveHost,
 		);
@@ -187,7 +193,7 @@ class Authenticator {
 		return new ProfileUri(
 			$token,
 			$this->user->id,
-			(string)$this->currentUriPath,
+			(string)$this->returnUri,
 			$this->authwaveHost
 		);
 	}

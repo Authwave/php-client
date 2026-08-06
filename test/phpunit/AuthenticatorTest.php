@@ -257,6 +257,22 @@ class AuthenticatorTest extends TestCase {
 		);
 	}
 
+	public function testSetReturnUriOverridesLoginReturnLocation():void {
+		$_SESSION = [];
+		$sut = new Authenticator("deployment_secret", "/current-path");
+		$sut->setReturnUri("/after-login?source=authwave");
+		$token = self::createStub(Token::class);
+		$token->method("generateRequestCipher")->willReturn(self::createStub(CipherText::class));
+		$token->method("getIv")->willReturn(self::createStub(InitVector::class));
+
+		parse_str($sut->getLoginUri($token)->getQuery(), $query);
+
+		self::assertSame(
+			bin2hex("/after-login?source=authwave"),
+			$query[BaseProviderUri::QUERY_STRING_CURRENT_URI],
+		);
+	}
+
 	public function testGetAdminUri() {
 		$_SESSION = [];
 		$auth = new Authenticator(
@@ -414,6 +430,10 @@ class AuthenticatorTest extends TestCase {
 				}
 
 				parse_str($uri->getQuery(), $queryParts);
+				if($queryParts[BaseProviderUri::QUERY_STRING_CURRENT_URI]
+				!== bin2hex("/after-logout")) {
+					return false;
+				}
 				/** @var SessionData $session */
 				$session = $_SESSION[SessionData::class];
 				$token = $session->getToken();
@@ -430,6 +450,7 @@ class AuthenticatorTest extends TestCase {
 			null,
 			$redirectHandler
 		);
+		$sut->setReturnUri("/after-logout");
 		$token = self::createMock(Token::class);
 		$cipherString = "example-request-cipher";
 		$cipher = self::createMock(CipherText::class);
@@ -514,6 +535,7 @@ class AuthenticatorTest extends TestCase {
 			),
 		];
 		$sut = new Authenticator("deployment_" . str_repeat("s", 32), "/account");
+		$sut->setReturnUri("/after-profile");
 
 		$generatedTokenUri = $sut->getProfileUri();
 		$providedTokenUri = $sut->getProfileUri(new Token(str_repeat("s", 32)));
@@ -521,7 +543,7 @@ class AuthenticatorTest extends TestCase {
 		self::assertSame("/profile/", $generatedTokenUri->getPath());
 		parse_str($generatedTokenUri->getQuery(), $query);
 		self::assertSame("user-id", $query[BaseProviderUri::QUERY_STRING_DEPLOYMENT_ID]);
-		self::assertSame(bin2hex("/account"), $query[BaseProviderUri::QUERY_STRING_CURRENT_URI]);
+		self::assertSame(bin2hex("/after-profile"), $query[BaseProviderUri::QUERY_STRING_CURRENT_URI]);
 		self::assertSame("/profile/", $providedTokenUri->getPath());
 	}
 
