@@ -7,7 +7,8 @@ use Authwave\ResponseData\UserResponseData;
 class SessionData {
 	public function __construct(
 		private readonly ?Token $token = null,
-		private readonly ?BaseResponseData $data = null
+		private readonly ?BaseResponseData $data = null,
+		private readonly ?string $returnQuery = null,
 	) {
 	}
 
@@ -25,5 +26,9 @@ class SessionData {
 		}
 
 		return $this->data;
+	}
+
+	public function getReturnQuery():?string {
+		return $this->returnQuery;
 	}
 }

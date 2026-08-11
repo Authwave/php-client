@@ -26,11 +26,15 @@ class LoginUri extends BaseProviderUri {
 	) {
 		$baseRemoteUri = $this->normaliseBaseUri($baseRemoteUri);
 		parent::__construct($baseRemoteUri);
+		$message = ["action" => "login"];
+		if($returnQuery = parse_url($currentPath, PHP_URL_QUERY)) {
+			$message["returnQuery"] = $returnQuery;
+		}
 		$this->query = $this->buildQuery(
 			$token,
 			$deploymentId,
 			$currentPath,
-			"action=login",
+			http_build_query($message),
 		);
 	}
 }

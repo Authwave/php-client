@@ -18,6 +18,22 @@ use PHPUnit\Framework\TestCase;
 use Psr\Http\Message\UriInterface;
 
 class AuthenticatorTest extends TestCase {
+	public function testResponseCipherPreservesRawPlusCharacters():void {
+		$reflection = new \ReflectionClass(Authenticator::class);
+		/** @var Authenticator $sut */
+		$sut = $reflection->newInstanceWithoutConstructor();
+		$currentUri = $reflection->getProperty("currentUri");
+		$currentUri->setAccessible(true);
+		$currentUri->setValue(
+			$sut,
+			new Uri("/?AUTHWAVE_RESPONSE_DATA=abc+def%3D%3D"),
+		);
+		$getQueryData = $reflection->getMethod("getQueryData");
+		$getQueryData->setAccessible(true);
+
+		self::assertSame("abc+def==", $getQueryData->invoke($sut));
+	}
+
 	public function testConstructWithDefaultSessionNotStarted() {
 		self::expectException(SessionNotStartedException::class);
 		new Authenticator(
@@ -58,7 +74,7 @@ class AuthenticatorTest extends TestCase {
 		$_SESSION = [];
 
 		$key = uniqid("key-");
-		$currentPath = uniqid("/path/");
+		$currentPath = uniqid("/path/") . "?signup=free";
 
 		$cipherString = "example-cipher";
 		$cipher = self::createMock(CipherText::class);
@@ -77,6 +93,7 @@ class AuthenticatorTest extends TestCase {
 
 		$expectedQueryParts = [
 			LoginUri::QUERY_STRING_CIPHER => (string)$cipher,
+			LoginUri::QUERY_STRING_DEPLOYMENT_ID => "",
 			LoginUri::QUERY_STRING_INIT_VECTOR => $ivString,
 			LoginUri::QUERY_STRING_CURRENT_URI => bin2hex($currentPath),
 		];
@@ -97,6 +114,10 @@ class AuthenticatorTest extends TestCase {
 			$redirectHandler
 		);
 		$sut->login($token);
+		self::assertSame(
+			"signup=free",
+			$_SESSION[SessionData::class]->getReturnQuery(),
+		);
 	}
 
 	public function testGetUuid() {
@@ -344,8 +365,63 @@ class AuthenticatorTest extends TestCase {
 		$iv->method("__toString")->willReturn($ivBytes);
 		$token->method("getIv")
 			->willReturn($iv);
-		$sut->logout($token);
+		$sut->logout(null, $token);
 		self::assertNotEmpty($_SESSION);
+	}
+
+	/**
+	 * @dataProvider provideLogoutRedirect
+	 */
+	public function testLogoutUsesRequestedRedirect(
+		string|UriInterface $redirectTo,
+		string $expectedRedirect,
+	):void {
+		$_SESSION = [];
+		$redirectHandler = self::createMock(RedirectHandler::class);
+		$redirectHandler->expects(self::once())
+			->method("redirect")
+			->with(self::isInstanceOf(UriInterface::class));
+
+		$sut = new Authenticator(
+			"test-key",
+			"https://example.com/current/path?old=value",
+			LoginUri::DEFAULT_BASE_REMOTE_URI,
+			null,
+			$redirectHandler,
+		);
+
+		$token = self::createMock(Token::class);
+		$cipher = self::createMock(CipherText::class);
+		$cipher->method("__toString")->willReturn("example-request-cipher");
+		$token->expects(self::once())
+			->method("generateRequestCipher")
+			->with(http_build_query([
+				"action" => "logout",
+				"redirectTo" => $expectedRedirect,
+			]))
+			->willReturn($cipher);
+		$iv = self::createMock(InitVector::class);
+		$iv->method("__toString")->willReturn("01234567890");
+		$token->method("getIv")->willReturn($iv);
+
+		$sut->logout($redirectTo, $token);
+	}
+
+	public function provideLogoutRedirect():array {
+		return [
+			"path string" => [
+				"/you-have-been-logged-out",
+				"/you-have-been-logged-out",
+			],
+			"query string" => [
+				"?whatever=something",
+				"https://example.com/current/path?whatever=something",
+			],
+			"URI object" => [
+				new Uri("https://example.com/signed-out"),
+				"https://example.com/signed-out",
+			],
+		];
 	}
 
 	public function testLoginRedirects() {
