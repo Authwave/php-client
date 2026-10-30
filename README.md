@@ -1,88 +1,106 @@
 PHP client library to implement Authwave in your application
 ============================================================
 
-Authwave is an open source Identity-as-a-Service product that can be self-hosted. Using Authwave allows your application to offer authentication with great user experience and security, without you having to program any of the authentication yourself.
+Authwave handles authentication through a hosted or self-hosted provider, while this library makes the authenticated user's identity available to a PHP application. The provider presents the login screens; the client manages the encrypted exchange and remembers the user in the application's session.
 
-To use this repository, your application must be registered to obtain a client key (see example below). This can be done from https://www.authwave.com or from your own instance of [Authwave Provider](https://github.com/Authwave/provider) if you are self-hosting.
+Register an application deployment with your [Authwave provider](https://github.com/Authwave/provider), configure its client return URI, and keep its complete client key in server-side configuration.
+
+Installation
+------------
+
+The client requires PHP 8.4 or later and the Sodium extension.
+
+```bash
+composer require authwave/php-client
+```
 
 Basic usage
 -----------
 
-With the following PHP code below, you can display a login button that, when clicked, changes to a logout button and displays a greeting to the logged-in user.
+For a small application served at `/`, the following page shows a login link and greets the authenticated visitor. Set `AUTHWAVE_CLIENT_KEY` in the server environment to the complete provider-issued key, including its deployment identifier and secret.
 
 ```php
 <?php
 use Authwave\Authenticator;
 use Authwave\AuthUser;
+
 require __DIR__ . "/vendor/autoload.php";
+session_start();
 
-// This constant can be loaded from your application's configuration
-// or environment variables. It is created in the remote Authwave provider.
-define("CLIENT_KEY", "1234567890abcdef");
+$clientKey = getenv("AUTHWAVE_CLIENT_KEY");
+if($clientKey === false || $clientKey === "") {
+	throw new RuntimeException("Set AUTHWAVE_CLIENT_KEY before running the application.");
+}
 
-// Construct the Authenticator class as soon as possible, as this handles the
-// Authentication steps passed via the query string from the remote provider.
 $auth = new Authenticator(
-	clientKey: CLIENT_KEY,
+	clientKey: $clientKey,
 	currentUriPath: $_SERVER["REQUEST_URI"],
 	onAuthenticated: function(AuthUser $user):void {
-		// Called once when a new authentication successfully completes.
-		// This is not called when the user is restored from their session.
-		logSuccessfulAuthentication($user->id);
+		error_log("Authentication completed for user " . $user->id);
 	},
 );
 
-// Handle authentication login/logout action via the querystring:
 if(isset($_GET["login"])) {
-// This will redirect the user agent to the auth uri, which is a location on the 
-// remote provider. The remote provider will in turn redirect the user agent
-// back to the return URI (set as 3rd parameter of Authenticator's constructor),
-// at which point the user will be considered authenticated.
+	$auth->setReturnUri("/");
 	$auth->login();
 }
-elseif(isset($_GET["logout"])) {
-	$auth->logout();
-}
 
-// Authentication is handled by Authwave, so you can trust "isLoggedIn"
-// as a mechanism for protecting your sensitive information.
 if($auth->isLoggedIn()) {
-// Available methods:
-// $auth->getId(); // a unique string in ULID format - use this to store in your database
-// $auth->getEmail(); // the current email of the user (could change)
-// $auth->getField($name); // any extra field your application is configured to take upon user signup 
-	
-	echo <<<HTML
-		<p>You are logged in as <strong>{$auth->getEmail()}</strong></p>
-		<p><a href="?logout">Log out</a></p>
-	HTML;
+	$user = $auth->getAuthUser();
+	$email = htmlspecialchars($user->email, ENT_QUOTES, "UTF-8");
+	echo "<p>You are logged in as <strong>$email</strong>.</p>";
 }
 else {
-	echo <<<HTML
-		<p>You are not logged in!</p>
-		<p><a href="?login">Log in</a></p>
-	HTML;
+	echo '<p><a href="?login">Log in</a></p>';
 }
 ```
+
+Load the autoloader before starting the session, and construct `Authenticator` before sending output. Its constructor processes returning authentication responses and can redirect immediately. Run the same setup on every route that can receive a login response.
+
+`getAuthUser()` provides the read-only `id` and `email` properties, `getData($name)` for an optional custom field, and `getKvp()` for all supplied custom fields. Use the user ID to associate local records with an account, and keep permission checks in the application. The provider's login response supplies ID and email; custom fields may be absent.
+
+The `onAuthenticated` callback runs when a new authentication completes, before the client removes the response parameter with a redirect. It does not run when a user is restored from the session. The callback is marked before invocation and is not retried automatically if it throws.
+
+Login destinations and self-hosting
+----------------------------------
+
+Use `setReturnUri()` before login to choose an application path, query string and fragment:
+
+```php
+$auth->setReturnUri("/members/orders?status=open#latest");
+$auth->login();
+```
+
+Without an override, login requests the current URI. The provider accepts root-relative paths and absolute URLs matching the deployment's configured client scheme, host and effective port. Invalid or external destinations fall back to the configured client return URI.
+
+The `authwaveHost` constructor argument selects the provider and defaults to `login.authwave.com`. For a self-hosted provider, supply its scheme, host and optional port, such as `https://login.example.com`.
 
 Logging out
 -----------
 
-Call `logout()` before sending output to clear the application's authentication state and send the browser to the provider, which clears its own session. An explicit destination takes priority over a destination configured with `setReturnUri()`:
+After the application's normal POST and CSRF checks, call `logout()` before sending output:
 
 ```php
 $auth->logout("/signed-out");
 ```
 
-With no explicit destination, `logout()` uses a configured return URI. If no return URI has been configured, the provider uses the deployment's default return location. The provider resolves relative paths against the deployment's client URI. Keep destinations under application control.
+The client clears its stored and in-memory authentication state, preserving unrelated session data, then redirects to the provider to clear its session. An explicit destination takes priority over `setReturnUri()`. Without either setting, the provider uses the deployment's default return location. Relative logout paths are resolved against the deployment's client URI. Keep destinations under application control.
 
-The default redirect handler ends the request. Custom handlers must transfer control appropriately; the authenticator is already logged out when they run. Other application session data is preserved. The default development fake user is logged out locally without visiting the provider.
+The default redirect handler ends the request. Custom handlers must transfer control appropriately; the authenticator is already logged out when they run. The default development fake user is logged out locally without visiting the provider.
 
-Running unit tests
-------------------
+Documentation
+-------------
 
-From the root directory, unit tests can be ran with the following command:
+Follow the [quick start guide](https://github.com/Authwave/php-client/wiki/Quick-start-guide) for a complete setup, or browse the [wiki](https://github.com/Authwave/php-client/wiki) for session integration, callbacks, destination rules and the API reference.
+
+Running checks
+--------------
+
+From the repository root, install development dependencies and run the configured checks:
 
 ```bash
-vendor/bin/phpunit test/phpunit --coverage-clover test/phpunit/_coverage --whitelist src
+composer install
+composer test
 ```
+
+The test script runs PHPUnit, PHPStan, PHP_CodeSniffer and PHPMD. To run the unit tests alone, use `composer phpunit`.
