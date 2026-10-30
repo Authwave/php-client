@@ -11,6 +11,26 @@ use Psr\Http\Message\UriInterface;
 
 #[AllowMockObjectsWithoutExpectations]
 class LoginUriTest extends TestCase {
+	public function testCurrentQueryIsIncludedInEncryptedMessage():void {
+		$cipher = self::createMock(CipherText::class);
+		$iv = self::createMock(InitVector::class);
+		$token = self::createMock(Token::class);
+		$token->expects(self::once())
+			->method("generateRequestCipher")
+			->with(http_build_query([
+				"action" => "login",
+				"returnQuery" => "filter=active&page=2",
+			]))
+			->willReturn($cipher);
+		$token->method("getIv")->willReturn($iv);
+
+		new LoginUri(
+			$token,
+			"/submissions?filter=active&page=2",
+			"deployment-id",
+		);
+	}
+
 	public function testQueryString() {
 		$cipherString = str_repeat("f", 16);
 		$cipher = self::createMock(CipherText::class);

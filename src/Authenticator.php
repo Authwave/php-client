@@ -89,12 +89,19 @@ class Authenticator {
 			$token = new Token($this->secret);
 		}
 
-		$this->sessionData = new SessionData($token);
+		$this->sessionData = new SessionData(
+			$token,
+			null,
+			$this->returnUri->getQuery(),
+		);
 		$this->session->set(SessionData::class, $this->sessionData);
 		$this->redirectHandler->redirect($this->getLoginUri($token));
 	}
 
-	public function logout(?Token $token = null):void {
+	public function logout(
+		null|string|UriInterface $redirectTo = null,
+		null|Token $token = null,
+	):void {
 // TODO: Log out needs implementing - ApplicationDeploymentNotFoundException throws!
 		if(is_null($token)) {
 			$token = new Token($this->secret);
@@ -107,7 +114,15 @@ class Authenticator {
 		else {
 			$this->sessionData = new SessionData($token);
 			$this->session->set(SessionData::class, $this->sessionData);
-			$this->redirectHandler->redirect($this->getLogoutUri($token));
+			$this->session->remove(SessionData::class);
+			$this->redirectHandler->redirect(
+				$this->getLogoutUri(
+					$token,
+					is_null($redirectTo)
+						? null
+						: $this->resolveLogoutRedirect($redirectTo),
+				)
+			);
 		}
 	}
 
@@ -174,13 +189,33 @@ class Authenticator {
 		);
 	}
 
-	private function getLogoutUri(Token $token):BaseProviderUri {
+	private function getLogoutUri(
+		Token $token,
+		?UriInterface $redirectTo,
+	):BaseProviderUri {
 		return new LogoutUri(
 			$token,
 			(string)$this->returnUri,
 			$this->deploymentId,
 			$this->authwaveHost,
+			$redirectTo,
 		);
+	}
+
+	private function resolveLogoutRedirect(
+		string|UriInterface|null $redirectTo,
+	):UriInterface {
+		if(is_null($redirectTo)) {
+			return $this->currentUriPath;
+		}
+
+		if(is_string($redirectTo) && str_starts_with($redirectTo, "?")) {
+			return $this->currentUriPath->withQuery(substr($redirectTo, 1));
+		}
+
+		return is_string($redirectTo)
+			? new Uri($redirectTo)
+			: $redirectTo;
 	}
 
 	public function getAdminUri():UriInterface {
@@ -213,6 +248,7 @@ class Authenticator {
 		}
 
 		$token = $this->sessionData->getToken();
+		$returnQuery = $this->sessionData->getReturnQuery();
 		$secretSessionIv = $token->getSecretIv();
 		$encrypted = new EncryptedMessage($queryData, $secretSessionIv);
 		$key = new Key($this->secret);
@@ -231,7 +267,7 @@ class Authenticator {
 		$wasInvoked = $this->sessionData
 			->hasInvokedAuthenticationCallback();
 
-		$newSessionData = new SessionData($token, $userData);
+		$newSessionData = new SessionData($token, $userData, $returnQuery);
 		if($wasInvoked || isset($this->onAuthenticated)) {
 			$newSessionData->markAuthenticationCallbackInvoked();
 		}
@@ -241,13 +277,17 @@ class Authenticator {
 			($this->onAuthenticated)($this->user);
 		}
 
-		$this->tidyResponseData();
+		$this->tidyResponseData($returnQuery);
 	}
 
-	private function tidyResponseData():void {
+	private function tidyResponseData(?string $returnQuery = null):void {
+		$redirectUri = new Uri((string)$this->currentUriPath);
+		if(!is_null($returnQuery)) {
+			$redirectUri = $redirectUri->withQuery($returnQuery);
+		}
+
 		$this->redirectHandler->redirect(
-			(new Uri((string)$this->currentUriPath))
-				->withoutQueryValue(self::RESPONSE_QUERY_PARAMETER)
+			$redirectUri->withoutQueryValue(self::RESPONSE_QUERY_PARAMETER)
 		);
 	}
 
@@ -263,6 +303,10 @@ class Authenticator {
 			return null;
 		}
 
-		return $queryParts[self::RESPONSE_QUERY_PARAMETER];
+		return strtr(
+			$queryParts[self::RESPONSE_QUERY_PARAMETER],
+			" ",
+			"+",
+		);
 	}
 }

@@ -10,6 +10,7 @@ class SessionData {
 	public function __construct(
 		private readonly ?Token $token = null,
 		private readonly ?BaseResponseData $data = null,
+		private readonly ?string $returnQuery = null,
 	) {
 	}
 
@@ -35,5 +36,9 @@ class SessionData {
 
 	public function markAuthenticationCallbackInvoked():void {
 		$this->callbackInvoked = true;
+	}
+
+	public function getReturnQuery():?string {
+		return $this->returnQuery;
 	}
 }

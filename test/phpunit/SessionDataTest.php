@@ -10,6 +10,12 @@ use PHPUnit\Framework\TestCase;
 
 #[AllowMockObjectsWithoutExpectations]
 class SessionDataTest extends TestCase {
+	public function testReturnQuery():void {
+		$sut = new SessionData(null, null, "signup=free");
+
+		self::assertSame("signup=free", $sut->getReturnQuery());
+	}
+
 	public function testGetTokenNull() {
 		$sut = new SessionData();
 		self::expectException(NotLoggedInException::class);
