@@ -25,7 +25,7 @@ class Authenticator {
 	private SessionData $sessionData;
 	private User $user;
 	private UriInterface $currentUriPath;
-	private UriInterface $returnUri;
+	private ?UriInterface $returnUri = null;
 	private readonly ?Closure $onAuthenticated;
 	private readonly string $deploymentId;
 	private readonly string $secret;
@@ -66,7 +66,6 @@ class Authenticator {
 			$currentUriPath = new Uri($currentUriPath);
 		}
 		$this->currentUriPath = $currentUriPath;
-		$this->returnUri = $currentUriPath;
 
 		$this->completeAuth();
 	}
@@ -92,7 +91,7 @@ class Authenticator {
 		$this->sessionData = new SessionData(
 			$token,
 			null,
-			$this->returnUri->getQuery(),
+			($this->returnUri ?? $this->currentUriPath)->getQuery(),
 		);
 		$this->session->set(SessionData::class, $this->sessionData);
 		$this->redirectHandler->redirect($this->getLoginUri($token));
@@ -102,28 +101,24 @@ class Authenticator {
 		null|string|UriInterface $redirectTo = null,
 		null|Token $token = null,
 	):void {
-// TODO: Log out needs implementing - ApplicationDeploymentNotFoundException throws!
-		if(is_null($token)) {
-			$token = new Token($this->secret);
+		$isFakeUser = isset($this->user) && $this->user->email === self::FAKE_EMAIL;
+		$this->session->remove(SessionData::class);
+		unset($this->user, $this->sessionData);
+
+		if($isFakeUser) {
+			return;
 		}
 
-		if(isset($this->user) && $this->user->email === self::FAKE_EMAIL) {
-			$this->session->remove(SessionData::class);
-			unset($this->user);
-		}
-		else {
-			$this->sessionData = new SessionData($token);
-			$this->session->set(SessionData::class, $this->sessionData);
-			$this->session->remove(SessionData::class);
-			$this->redirectHandler->redirect(
-				$this->getLogoutUri(
-					$token,
-					is_null($redirectTo)
-						? null
-						: $this->resolveLogoutRedirect($redirectTo),
-				)
-			);
-		}
+		$token ??= new Token($this->secret);
+		$redirectTo ??= $this->returnUri;
+		$this->redirectHandler->redirect(
+			$this->getLogoutUri(
+				$token,
+				is_null($redirectTo)
+					? null
+					: $this->resolveLogoutRedirect($redirectTo),
+			)
+		);
 	}
 
 	public function fakeLogin(string $userId, ?string $email = null, string $redirectTo = "/"):void {
@@ -183,7 +178,7 @@ class Authenticator {
 	public function getLoginUri(Token $token):BaseProviderUri {
 		return new LoginUri(
 			$token,
-			(string)$this->returnUri,
+			(string)($this->returnUri ?? $this->currentUriPath),
 			$this->deploymentId,
 			$this->authwaveHost,
 		);
@@ -195,7 +190,7 @@ class Authenticator {
 	):BaseProviderUri {
 		return new LogoutUri(
 			$token,
-			(string)$this->returnUri,
+			(string)($this->returnUri ?? $this->currentUriPath),
 			$this->deploymentId,
 			$this->authwaveHost,
 			$redirectTo,
@@ -230,7 +225,7 @@ class Authenticator {
 		return new ProfileUri(
 			$token,
 			$this->user->id,
-			(string)$this->returnUri,
+			(string)($this->returnUri ?? $this->currentUriPath),
 			$this->authwaveHost
 		);
 	}

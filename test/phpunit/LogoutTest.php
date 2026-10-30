@@ -12,6 +12,8 @@ use GT\Cipher\InitVector;
 use GT\Cipher\Message\EncryptedMessage;
 use GT\Session\SessionArrayWrapper;
 use PHPUnit\Framework\TestCase;
+use PHPUnit\Framework\Attributes\DataProvider;
+use GT\Http\Uri;
 use Psr\Http\Message\UriInterface;
 
 class LogoutTest extends TestCase {
@@ -47,12 +49,17 @@ class LogoutTest extends TestCase {
 		$auth->getAuthUser();
 	}
 
-	public function testLogoutEncryptsConfiguredReturnUriForProvider():void {
+	#[DataProvider("provideLogoutDestinations")]
+	public function testLogoutEncryptsDestinationForProvider(
+		?string $returnUri,
+		string|UriInterface|null $redirectTo,
+		?string $expectedDestination,
+	):void {
 		$secret = str_repeat("s", 32);
 		$data = [];
 		$redirect = self::createMock(RedirectHandler::class);
 		$redirect->expects(self::once())->method("redirect")
-			->willReturnCallback(function(UriInterface $uri) use ($secret):void {
+			->willReturnCallback(function(UriInterface $uri) use ($secret, $expectedDestination):void {
 				self::assertSame("login.authwave.com", $uri->getHost());
 				parse_str($uri->getQuery(), $query);
 				self::assertSame("deployment", $query["d"]);
@@ -60,7 +67,8 @@ class LogoutTest extends TestCase {
 				$message = (new EncryptedMessage($query["c"], $iv))->decrypt(new Key($secret));
 				parse_str((string)$message, $payload);
 				self::assertSame("logout", $payload["action"]);
-				self::assertSame("/signed-out?source=authwave", $payload["redirectTo"] ?? null);
+				self::assertSame($expectedDestination, $payload["redirectTo"] ?? null);
+				self::assertNotEmpty($payload["secretIv"]);
 			});
 		$auth = new Authenticator(
 			"deployment_" . $secret,
@@ -68,8 +76,20 @@ class LogoutTest extends TestCase {
 			session: new SessionArrayWrapper($data),
 			redirectHandler: $redirect,
 		);
-		$auth->setReturnUri("/signed-out?source=authwave");
+		if(!is_null($returnUri)) {
+			$auth->setReturnUri($returnUri);
+		}
 
-		$auth->logout();
+		$auth->logout($redirectTo);
+	}
+
+	public static function provideLogoutDestinations():array {
+		return [
+			"configured return" => ["/signed-out?source=authwave", null, "/signed-out?source=authwave"],
+			"explicit path overrides return" => ["/configured", "/explicit", "/explicit"],
+			"explicit URI overrides return" => ["/configured", new Uri("https://example.com/bye"), "https://example.com/bye"],
+			"explicit query uses current path" => ["/configured", "?signed-out", "/logout?signed-out"],
+			"provider default" => [null, null, null],
+		];
 	}
 }
