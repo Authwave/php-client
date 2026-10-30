@@ -65,6 +65,19 @@ else {
 }
 ```
 
+Logging out
+-----------
+
+Call `logout()` before sending output to clear the application's authentication state and send the browser to the provider, which clears its own session. An explicit destination takes priority over a destination configured with `setReturnUri()`:
+
+```php
+$auth->logout("/signed-out");
+```
+
+With no explicit destination, `logout()` uses a configured return URI. If no return URI has been configured, the provider uses the deployment's default return location. The provider resolves relative paths against the deployment's client URI. Keep destinations under application control.
+
+The default redirect handler ends the request. Custom handlers must transfer control appropriately; the authenticator is already logged out when they run. Other application session data is preserved. The default development fake user is logged out locally without visiting the provider.
+
 Running unit tests
 ------------------
 
