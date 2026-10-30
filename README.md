@@ -13,6 +13,7 @@ With the following PHP code below, you can display a login button that, when cli
 ```php
 <?php
 use Authwave\Authenticator;
+use Authwave\AuthUser;
 require __DIR__ . "/vendor/autoload.php";
 
 // This constant can be loaded from your application's configuration
@@ -22,8 +23,13 @@ define("CLIENT_KEY", "1234567890abcdef");
 // Construct the Authenticator class as soon as possible, as this handles the
 // Authentication steps passed via the query string from the remote provider.
 $auth = new Authenticator(
-	CLIENT_KEY,
-	$_SERVER["REQUEST_URI"],
+	clientKey: CLIENT_KEY,
+	currentUriPath: $_SERVER["REQUEST_URI"],
+	onAuthenticated: function(AuthUser $user):void {
+		// Called once when a new authentication successfully completes.
+		// This is not called when the user is restored from their session.
+		logSuccessfulAuthentication($user->id);
+	},
 );
 
 // Handle authentication login/logout action via the querystring:

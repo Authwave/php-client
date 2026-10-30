@@ -1,19 +1,20 @@
 <?php
 namespace Authwave;
 
+use Closure;
 use Authwave\ProviderUri\BaseProviderUri;
 use Authwave\ProviderUri\AdminUri;
 use Authwave\ProviderUri\LoginUri;
 use Authwave\ProviderUri\LogoutUri;
 use Authwave\ProviderUri\ProfileUri;
 use Authwave\ResponseData\UserResponseData;
-use Gt\Cipher\InitVector;
-use Gt\Cipher\Key;
-use Gt\Cipher\Message\EncryptedMessage;
-use Gt\Cipher\Message\PlainTextMessage;
-use Gt\Http\Uri;
+use GT\Cipher\InitVector;
+use GT\Cipher\Key;
+use GT\Cipher\Message\EncryptedMessage;
+use GT\Cipher\Message\PlainTextMessage;
+use GT\Http\Uri;
 use Gt\Logger\Log;
-use Gt\Session\SessionContainer;
+use GT\Session\SessionContainer;
 use Psr\Http\Message\UriInterface;
 
 class Authenticator {
@@ -23,17 +24,23 @@ class Authenticator {
 
 	private SessionData $sessionData;
 	private User $user;
-	private Uri $currentUri;
+	private UriInterface $currentUriPath;
+	private UriInterface $returnUri;
+	private readonly ?Closure $onAuthenticated;
 	private readonly string $deploymentId;
 	private readonly string $secret;
 
 	public function __construct(
 		string $clientKey,
-		string|Uri $currentUri,
+		string|UriInterface $currentUriPath,
 		private readonly string $authwaveHost = "login.authwave.com",
 		private ?SessionContainer $session = null,
 		private ?RedirectHandler $redirectHandler = null,
+		?callable $onAuthenticated = null,
 	) {
+		$this->onAuthenticated = is_null($onAuthenticated)
+			? null
+			: Closure::fromCallable($onAuthenticated);
 		$this->deploymentId = substr($clientKey, 0, strrpos($clientKey, "_"));
 		$this->secret = substr(strrchr($clientKey, "_"), 1);
 
@@ -55,12 +62,17 @@ class Authenticator {
 			catch(NotLoggedInException) {}
 		}
 
-		if(is_string($currentUri)) {
-			$currentUri = new Uri($currentUri);
+		if(is_string($currentUriPath)) {
+			$currentUriPath = new Uri($currentUriPath);
 		}
-		$this->currentUri = $currentUri;
+		$this->currentUriPath = $currentUriPath;
+		$this->returnUri = $currentUriPath;
 
 		$this->completeAuth();
+	}
+
+	public function setReturnUri(string $uri):void {
+		$this->returnUri = new Uri($uri);
 	}
 
 	public function isLoggedIn():bool {
@@ -80,7 +92,7 @@ class Authenticator {
 		$this->sessionData = new SessionData(
 			$token,
 			null,
-			$this->currentUri->getQuery() ?: null,
+			$this->returnUri->getQuery(),
 		);
 		$this->session->set(SessionData::class, $this->sessionData);
 		$this->redirectHandler->redirect($this->getLoginUri($token));
@@ -142,15 +154,25 @@ class Authenticator {
 		$queryString = http_build_query([
 			"AUTHWAVE_RESPONSE_DATA" => (string)$cipherText,
 		]);
-		if($currentQuery = $this->currentUri->getQuery()) {
-			$queryString .= "&";
-			$queryString .= $currentQuery;
-		}
 		$uri = new Uri("$redirectTo?$queryString");
 		$this->redirectHandler->redirect($uri);
 	}
 
+	public function getAuthUser():AuthUser {
+		if(!isset($this->user)) {
+			throw new NotLoggedInException();
+		}
+
+		return $this->user;
+	}
+
+	/** @deprecated Use getAuthUser() instead. */
 	public function getUser():User {
+		trigger_error(
+			"Authenticator::getUser() is deprecated; use getAuthUser() instead.",
+			E_USER_DEPRECATED,
+		);
+
 		if(!isset($this->user)) {
 			throw new NotLoggedInException();
 		}
@@ -161,7 +183,7 @@ class Authenticator {
 	public function getLoginUri(Token $token):BaseProviderUri {
 		return new LoginUri(
 			$token,
-			$this->currentUri,
+			(string)$this->returnUri,
 			$this->deploymentId,
 			$this->authwaveHost,
 		);
@@ -173,7 +195,7 @@ class Authenticator {
 	):BaseProviderUri {
 		return new LogoutUri(
 			$token,
-			(string)$this->currentUri,
+			(string)$this->returnUri,
 			$this->deploymentId,
 			$this->authwaveHost,
 			$redirectTo,
@@ -184,11 +206,11 @@ class Authenticator {
 		string|UriInterface|null $redirectTo,
 	):UriInterface {
 		if(is_null($redirectTo)) {
-			return $this->currentUri;
+			return $this->currentUriPath;
 		}
 
 		if(is_string($redirectTo) && str_starts_with($redirectTo, "?")) {
-			return $this->currentUri->withQuery(substr($redirectTo, 1));
+			return $this->currentUriPath->withQuery(substr($redirectTo, 1));
 		}
 
 		return is_string($redirectTo)
@@ -200,7 +222,7 @@ class Authenticator {
 		return new AdminUri($this->authwaveHost);
 	}
 
-	public function getProfileUri(Token $token = null):UriInterface {
+	public function getProfileUri(?Token $token = null):UriInterface {
 		if(is_null($token)) {
 			$token = new Token($this->secret);
 		}
@@ -208,7 +230,7 @@ class Authenticator {
 		return new ProfileUri(
 			$token,
 			$this->user->id,
-			$this->currentUri,
+			(string)$this->returnUri,
 			$this->authwaveHost
 		);
 	}
@@ -237,17 +259,29 @@ class Authenticator {
 			$data->{"email"},
 			$data->{"kvp"} ?? [],
 		);
-
-		$this->session->set(
-			SessionData::class,
-			new SessionData($token, $userData)
+		$this->user = new User(
+			$userData->getId(),
+			$userData->getEmail(),
+			$userData->getAllFields(),
 		);
+		$wasInvoked = $this->sessionData
+			->hasInvokedAuthenticationCallback();
+
+		$newSessionData = new SessionData($token, $userData, $returnQuery);
+		if($wasInvoked || isset($this->onAuthenticated)) {
+			$newSessionData->markAuthenticationCallbackInvoked();
+		}
+		$this->session->set(SessionData::class, $newSessionData);
+
+		if(isset($this->onAuthenticated) && !$wasInvoked) {
+			($this->onAuthenticated)($this->user);
+		}
 
 		$this->tidyResponseData($returnQuery);
 	}
 
 	private function tidyResponseData(?string $returnQuery = null):void {
-		$redirectUri = new Uri($this->currentUri);
+		$redirectUri = new Uri((string)$this->currentUriPath);
 		if(!is_null($returnQuery)) {
 			$redirectUri = $redirectUri->withQuery($returnQuery);
 		}
@@ -258,10 +292,7 @@ class Authenticator {
 	}
 
 	private function getQueryData():?string {
-		$queryString = parse_url(
-			$this->currentUri,
-			PHP_URL_QUERY
-		);
+		$queryString = $this->currentUriPath->getQuery();
 		if(!$queryString) {
 			return null;
 		}

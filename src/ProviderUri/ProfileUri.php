@@ -13,6 +13,6 @@ class ProfileUri extends BaseProviderUri {
 		$baseRemoteUri = $this->normaliseBaseUri($baseRemoteUri);
 		parent::__construct($baseRemoteUri);
 		$this->path = "/profile/";
-		$this->query = $this->buildQuery($token, $uuid);
+		$this->query = $this->buildQuery($token, $uuid, $currentPath);
 	}
 }

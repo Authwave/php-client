@@ -1,13 +1,14 @@
 <?php
 namespace Authwave\Test\ProviderUri;
 
-use Authwave\InitVector;
 use Authwave\InsecureProtocolException;
 use Authwave\ProviderUri\LoginUri;
 use Authwave\Token;
+use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
 use PHPUnit\Framework\TestCase;
 use Psr\Http\Message\UriInterface;
 
+#[AllowMockObjectsWithoutExpectations]
 class AbstractProviderUriTest extends TestCase {
 	public function testAuthUriHttps() {
 		$baseUri = self::createMock(UriInterface::class);
@@ -18,7 +19,8 @@ class AbstractProviderUriTest extends TestCase {
 		$sut = new LoginUri(
 			$token,
 			"",
-			$baseUri
+			"deployment-id",
+			(string)$baseUri,
 		);
 		self::assertEquals(
 			"https",
@@ -38,7 +40,8 @@ class AbstractProviderUriTest extends TestCase {
 		$sut = new LoginUri(
 			$token,
 			"",
-			$baseUri
+			"deployment-id",
+			(string)$baseUri,
 		);
 		self::assertEquals(
 			"http",
@@ -57,7 +60,8 @@ class AbstractProviderUriTest extends TestCase {
 		$sut = new LoginUri(
 			$token,
 			"/",
-			"localhost"
+			"deployment-id",
+			"localhost",
 		);
 
 		self::assertStringStartsWith(
@@ -72,7 +76,8 @@ class AbstractProviderUriTest extends TestCase {
 		$sut = new LoginUri(
 			$token,
 			"/",
-			"http://localhost"
+			"deployment-id",
+			"http://localhost",
 		);
 		self::assertStringStartsWith(
 			"http://localhost",
@@ -87,7 +92,8 @@ class AbstractProviderUriTest extends TestCase {
 		new LoginUri(
 			$token,
 			"/",
-			"http://localhost.com"
+			"deployment-id",
+			"http://localhost.com",
 		);
 	}
 
@@ -101,7 +107,9 @@ class AbstractProviderUriTest extends TestCase {
 		$sut = new LoginUri(
 			$token,
 			"/",
-			$baseUri);
+			"deployment-id",
+			(string)$baseUri,
+		);
 
 		self::assertEquals(
 			"https",
