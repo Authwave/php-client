@@ -6,7 +6,6 @@ use Authwave\ProviderUri\BaseProviderUri;
 use Authwave\ProviderUri\AdminUri;
 use Authwave\ProviderUri\LoginUri;
 use Authwave\ProviderUri\LogoutUri;
-use Authwave\ProviderUri\ProfileUri;
 use Authwave\ResponseData\UserResponseData;
 use GT\Cipher\InitVector;
 use GT\Cipher\Key;
@@ -215,19 +214,6 @@ class Authenticator {
 
 	public function getAdminUri():UriInterface {
 		return new AdminUri($this->authwaveHost);
-	}
-
-	public function getProfileUri(?Token $token = null):UriInterface {
-		if(is_null($token)) {
-			$token = new Token($this->secret);
-		}
-
-		return new ProfileUri(
-			$token,
-			$this->user->id,
-			(string)($this->returnUri ?? $this->currentUriPath),
-			$this->authwaveHost
-		);
 	}
 
 	private function completeAuth():void {
