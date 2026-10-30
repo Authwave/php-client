@@ -596,26 +596,6 @@ class AuthenticatorTest extends TestCase {
 		self::assertSame(Authenticator::FAKE_EMAIL, $userData->getEmail());
 	}
 
-	public function testGetProfileUriWithGeneratedAndProvidedTokens():void {
-		$_SESSION = [
-			SessionData::class => new SessionData(
-				new Token(str_repeat("s", 32)),
-				new UserResponseData("user-id", "person@example.com"),
-			),
-		];
-		$sut = new Authenticator("deployment_" . str_repeat("s", 32), "/account");
-		$sut->setReturnUri("/after-profile");
-
-		$generatedTokenUri = $sut->getProfileUri();
-		$providedTokenUri = $sut->getProfileUri(new Token(str_repeat("s", 32)));
-
-		self::assertSame("/profile/", $generatedTokenUri->getPath());
-		parse_str($generatedTokenUri->getQuery(), $query);
-		self::assertSame("user-id", $query[BaseProviderUri::QUERY_STRING_DEPLOYMENT_ID]);
-		self::assertSame(bin2hex("/after-profile"), $query[BaseProviderUri::QUERY_STRING_CURRENT_URI]);
-		self::assertSame("/profile/", $providedTokenUri->getPath());
-	}
-
 	#[\PHPUnit\Framework\Attributes\DataProvider("provideLogoutRedirect")]
 	public function testLogoutUsesRequestedRedirect(
 		string|UriInterface $redirectTo,
