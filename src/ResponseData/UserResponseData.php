@@ -2,11 +2,9 @@
 namespace Authwave\ResponseData;
 
 class UserResponseData extends BaseResponseData {
-	/** @param array<string, string> $kvp */
 	public function __construct(
 		private readonly string $uuid,
 		private readonly string $email,
-		private readonly array $kvp = [],
 		?string $message = null,
 	) {
 		parent::__construct($message);
@@ -20,12 +18,4 @@ class UserResponseData extends BaseResponseData {
 		return $this->email;
 	}
 
-	public function getField(string $name):?string {
-		return $this->kvp[$name] ?? null;
-	}
-
-	/** @return array<string, string> */
-	public function getAllFields():array {
-		return $this->kvp;
-	}
 }

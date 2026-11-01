@@ -66,15 +66,13 @@ class Token {
 		}
 
 		$id = $data->uuid ?? $data->id;
-		$fields = $data->fields ?? [];
-		if(!is_string($id) || !is_array($fields)) {
+		if(!is_string($id)) {
 			throw new InvalidUserDataSerializationException();
 		}
 
 		return new UserResponseData(
 			$id,
 			$data->email,
-			$fields,
 		);
 	}
 }

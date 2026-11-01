@@ -94,14 +94,13 @@ class TokenTest extends TestCase {
 		self::assertEquals($email, $userData->getEmail());
 	}
 
-	public function testDecryptResponseCipherRejectsInvalidFieldTypes():void {
+	public function testDecryptResponseCipherRejectsInvalidIdentityTypes():void {
 		$keyBytes = str_repeat("0", SODIUM_CRYPTO_SECRETBOX_KEYBYTES);
 		$ivBytes = str_repeat("1", SODIUM_CRYPTO_SECRETBOX_NONCEBYTES);
 		$cipher = sodium_crypto_secretbox(
 			json_encode([
 				"id" => 123,
 				"email" => "person@example.com",
-				"fields" => "not-an-array",
 			]),
 			$ivBytes,
 			$keyBytes,

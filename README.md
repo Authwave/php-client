@@ -57,7 +57,7 @@ else {
 
 Load the autoloader before starting the session, and construct `Authenticator` before sending output. Its constructor processes returning authentication responses and can redirect immediately. Run the same setup on every route that can receive a login response.
 
-`getAuthUser()` provides the read-only `id` and `email` properties, `getData($name)` for an optional custom field, and `getKvp()` for all supplied custom fields. Use the user ID to associate local records with an account, and keep permission checks in the application. The provider's login response supplies ID and email; custom fields may be absent.
+`getAuthUser()` provides the read-only `id` and `email` properties. Use the user ID to associate local records with an account, and keep permission checks in the application.
 
 The `onAuthenticated` callback runs when a new authentication completes, before the client removes the response parameter with a redirect. It does not run when a user is restored from the session. The callback is marked before invocation and is not retried automatically if it throws.
 

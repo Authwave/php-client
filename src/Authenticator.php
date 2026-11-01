@@ -54,7 +54,6 @@ class Authenticator {
 					$this->user = new User(
 						$responseData->getId(),
 						$responseData->getEmail(),
-						$responseData->getAllFields(),
 					);
 				}
 			}
@@ -238,12 +237,10 @@ class Authenticator {
 		$userData = new UserResponseData(
 			$data->{"id"},
 			$data->{"email"},
-			$data->{"kvp"} ?? [],
 		);
 		$this->user = new User(
 			$userData->getId(),
 			$userData->getEmail(),
-			$userData->getAllFields(),
 		);
 		$wasInvoked = $this->sessionData
 			->hasInvokedAuthenticationCallback();

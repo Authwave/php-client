@@ -9,13 +9,11 @@ class ResponseDataTest extends TestCase {
 		$sut = new UserResponseData(
 			"user-id",
 			"person@example.com",
-			["role" => "admin"],
 			"Welcome",
 		);
 
+		self::assertSame("user-id", $sut->getId());
+		self::assertSame("person@example.com", $sut->getEmail());
 		self::assertSame("Welcome", $sut->getMessage());
-		self::assertSame("admin", $sut->getField("role"));
-		self::assertNull($sut->getField("missing"));
-		self::assertSame(["role" => "admin"], $sut->getAllFields());
 	}
 }
