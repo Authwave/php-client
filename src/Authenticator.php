@@ -12,7 +12,7 @@ use GT\Cipher\Key;
 use GT\Cipher\Message\EncryptedMessage;
 use GT\Cipher\Message\PlainTextMessage;
 use GT\Http\Uri;
-use GT\Logger\Log;
+use Gt\Logger\Log;
 use GT\Session\SessionContainer;
 use Psr\Http\Message\UriInterface;
 
