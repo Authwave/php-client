@@ -25,8 +25,11 @@ abstract class BaseProviderUri extends Uri {
 			->withHost($host)
 			->withPort($port);
 
+		$isTestHttp = $uri->getScheme() === "http"
+			&& str_ends_with(strtolower(rtrim($uri->getHost(), ".")), ".test");
 		if($uri->getHost() !== "localhost"
 		&& $uri->getHost() !== "127.0.0.127"
+		&& !$isTestHttp
 		&& $uri->getScheme() !== "https") {
 			throw new InsecureProtocolException($uri->getScheme());
 		}
