@@ -372,6 +372,7 @@ class AuthenticatorTest extends TestCase {
 			LoginUri::DEFAULT_BASE_REMOTE_URI,
 			null,
 			$redirectHandler,
+			regenerateSession: static function():void {},
 			onAuthenticated: function(AuthUser $user) use (&$authenticatedUser):void {
 				$authenticatedUser = $user;
 			},
@@ -423,6 +424,7 @@ class AuthenticatorTest extends TestCase {
 				$currentUri,
 				redirectHandler: self::createStub(RedirectHandler::class),
 				onAuthenticated: $callback,
+				regenerateSession: static function():void {},
 			);
 			self::fail("Expected the application callback to throw");
 		}
@@ -439,6 +441,7 @@ class AuthenticatorTest extends TestCase {
 			$currentUri,
 			redirectHandler: $redirectHandler,
 			onAuthenticated: $callback,
+			regenerateSession: static function():void {},
 		);
 
 		self::assertSame(1, $callbackCount);
@@ -587,6 +590,7 @@ class AuthenticatorTest extends TestCase {
 			"deployment_" . str_repeat("s", 32),
 			"/current?filter=active",
 			redirectHandler: $redirectHandler,
+			regenerateSession: static function():void {},
 		);
 
 		$sut->fakeLogin("user-id", redirectTo: "/destination");

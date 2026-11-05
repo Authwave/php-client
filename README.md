@@ -57,6 +57,8 @@ else {
 
 Load the autoloader before starting the session, and construct `Authenticator` before sending output. Its constructor processes returning authentication responses and can redirect immediately. Run the same setup on every route that can receive a login response.
 
+Successful authentication regenerates the native session ID before storing the user and removes the old session. Unrelated session data is preserved. With a custom session container, pass a `regenerateSession` callback which replaces the ID, invalidates the old session and preserves the current data. If rotation fails, throw an exception so authentication stops. Ordinary session restoration does not rotate the ID.
+
 `getAuthUser()` provides the read-only `id` and `email` properties. Use the user ID to associate local records with an account, and keep permission checks in the application.
 
 The `onAuthenticated` callback runs when a new authentication completes, before the client removes the response parameter with a redirect. It does not run when a user is restored from the session. The callback is marked before invocation and is not retried automatically if it throws.
