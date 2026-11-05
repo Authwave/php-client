@@ -39,7 +39,7 @@ class AuthenticatorTest extends TestCase {
 	public function testConstructWithDefaultSessionNotStarted() {
 		self::expectException(SessionNotStartedException::class);
 		new Authenticator(
-			"test-key",
+			"deployment_" . str_repeat("s", 32),
 			"/"
 		);
 	}
@@ -47,7 +47,7 @@ class AuthenticatorTest extends TestCase {
 	public function testIsLoggedInFalseByDefault() {
 		$_SESSION = [];
 		$sut = new Authenticator(
-			"test-key",
+			"deployment_" . str_repeat("s", 32),
 			"/"
 		);
 		self::assertFalse($sut->isLoggedIn());
@@ -66,7 +66,7 @@ class AuthenticatorTest extends TestCase {
 		];
 
 		$sut = new Authenticator(
-			"test-key",
+			"deployment_" . str_repeat("s", 32),
 			"/"
 		);
 		self::assertTrue($sut->isLoggedIn());
@@ -100,7 +100,7 @@ class AuthenticatorTest extends TestCase {
 		$_SESSION = [];
 
 		$deploymentId = uniqid("deployment-");
-		$key = $deploymentId . "_secret";
+		$key = $deploymentId . "_" . str_repeat("s", 32);
 		$currentPath = uniqid("/path/") . "?signup=free";
 
 		$cipherString = "example-cipher";
@@ -158,7 +158,7 @@ class AuthenticatorTest extends TestCase {
 			SessionData::class => $sessionData,
 		];
 		$sut = new Authenticator(
-			"test-key",
+			"deployment_" . str_repeat("s", 32),
 			"/"
 		);
 		self::assertEquals($exampleId, $sut->getAuthUser()->id);
@@ -167,7 +167,7 @@ class AuthenticatorTest extends TestCase {
 	public function testGetEmailThrowsExceptionWhenNotLoggedIn() {
 		$_SESSION = [];
 		$sut = new Authenticator(
-			"test-key",
+			"deployment_" . str_repeat("s", 32),
 			"/"
 		);
 		self::expectException(NotLoggedInException::class);
@@ -188,7 +188,7 @@ class AuthenticatorTest extends TestCase {
 			SessionData::class => $sessionData,
 		];
 		$sut = new Authenticator(
-			"test-key",
+			"deployment_" . str_repeat("s", 32),
 			"/"
 		);
 		self::assertEquals($expectedEmail, $sut->getAuthUser()->email);
@@ -246,7 +246,7 @@ class AuthenticatorTest extends TestCase {
 		$_SESSION = [];
 
 		new Authenticator(
-			"test-key",
+			"deployment_" . str_repeat("s", 32),
 			"/example-path/?filter=something",
 			LoginUri::DEFAULT_BASE_REMOTE_URI,
 			null,
@@ -259,7 +259,7 @@ class AuthenticatorTest extends TestCase {
 		$currentUriPath = self::createStub(UriInterface::class);
 		$currentUriPath->method("__toString")->willReturn("/psr-path");
 		$currentUriPath->method("getQuery")->willReturn("");
-		$sut = new Authenticator("deployment_secret", $currentUriPath);
+		$sut = new Authenticator("deployment_" . str_repeat("s", 32), $currentUriPath);
 		$token = self::createStub(Token::class);
 		$token->method("generateRequestCipher")->willReturn(self::createStub(CipherText::class));
 		$token->method("getIv")->willReturn(self::createStub(InitVector::class));
@@ -274,7 +274,7 @@ class AuthenticatorTest extends TestCase {
 
 	public function testSetReturnUriOverridesLoginReturnLocation():void {
 		$_SESSION = [];
-		$sut = new Authenticator("deployment_secret", "/current-path");
+		$sut = new Authenticator("deployment_" . str_repeat("s", 32), "/current-path");
 		$sut->setReturnUri("/after-login?source=authwave");
 		$token = self::createStub(Token::class);
 		$token->method("generateRequestCipher")->willReturn(self::createStub(CipherText::class));
@@ -291,7 +291,7 @@ class AuthenticatorTest extends TestCase {
 	public function testGetAdminUri() {
 		$_SESSION = [];
 		$auth = new Authenticator(
-			"test-key",
+			"deployment_" . str_repeat("s", 32),
 			"/example-path",
 			BaseProviderUri::DEFAULT_BASE_REMOTE_URI
 		);
@@ -311,7 +311,7 @@ class AuthenticatorTest extends TestCase {
 		$redirectHandler = self::createStub(RedirectHandler::class);
 		self::expectException(NotLoggedInException::class);
 		$sut = new Authenticator(
-			"test-key",
+			"deployment_" . str_repeat("s", 32),
 			$currentUri,
 			LoginUri::DEFAULT_BASE_REMOTE_URI,
 			null,
@@ -329,7 +329,7 @@ class AuthenticatorTest extends TestCase {
 		$keyBytes = str_repeat("0", SODIUM_CRYPTO_SECRETBOX_KEYBYTES);
 		$ivBytes = str_repeat("1", SODIUM_CRYPTO_SECRETBOX_NONCEBYTES);
 		$plainTextMessage = json_encode([
-			"id" => 123,
+			"id" => "123",
 			"email" => "person@example.com",
 		]);
 		$encryptedMessage = sodium_crypto_secretbox(
@@ -458,7 +458,7 @@ class AuthenticatorTest extends TestCase {
 			->method("redirect");
 
 		$sut = new Authenticator(
-			"test-key",
+			"deployment_" . str_repeat("s", 32),
 			"/",
 			LoginUri::DEFAULT_BASE_REMOTE_URI,
 			null,
@@ -483,7 +483,7 @@ class AuthenticatorTest extends TestCase {
 	public function testGetUuidThrowsExceptionWhenNotLoggedIn() {
 		$_SESSION = [];
 		$sut = new Authenticator(
-			"test-key",
+			"deployment_" . str_repeat("s", 32),
 			"/"
 		);
 		self::expectException(NotLoggedInException::class);
@@ -513,7 +513,7 @@ class AuthenticatorTest extends TestCase {
 			}));
 
 		$sut = new Authenticator(
-			"test-key",
+			"deployment_" . str_repeat("s", 32),
 			"/",
 			LoginUri::DEFAULT_BASE_REMOTE_URI,
 			null,
@@ -608,7 +608,7 @@ class AuthenticatorTest extends TestCase {
 			->with(self::isInstanceOf(UriInterface::class));
 
 		$sut = new Authenticator(
-			"test-key",
+			"deployment_" . str_repeat("s", 32),
 			"https://example.com/current/path?old=value",
 			LoginUri::DEFAULT_BASE_REMOTE_URI,
 			null,
@@ -660,7 +660,7 @@ class AuthenticatorTest extends TestCase {
 			));
 
 		$sut = new Authenticator(
-			"test-key",
+			"deployment_" . str_repeat("s", 32),
 			"/",
 			LoginUri::DEFAULT_BASE_REMOTE_URI,
 			null,
@@ -694,7 +694,7 @@ class AuthenticatorTest extends TestCase {
 			));
 
 		$sut = new Authenticator(
-			"test-key",
+			"deployment_" . str_repeat("s", 32),
 			"/",
 			"http://localhost:8081",
 			null,

@@ -104,3 +104,5 @@ composer test
 ```
 
 The test script runs PHPUnit, PHPStan, PHP_CodeSniffer and PHPMD. To run the unit tests alone, use `composer phpunit`.
+
+Client keys must contain a non-empty deployment ID, an underscore and a 32-byte secret. Invalid keys throw `InvalidClientKeyException` when constructing the authenticator. Callback response parameters must be non-empty strings containing base64-encoded ciphertext. Invalid parameter shapes or encoding throw `ResponseCipherDecryptionException`; invalid decrypted JSON or identity field types throw `InvalidUserDataSerializationException`. Both callback completion and `Token::decode()` require a string identity (`uuid` or `id`) and a string `email`. Invalid responses leave the pending session unchanged and do not invoke the authentication callback.

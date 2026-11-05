@@ -40,8 +40,13 @@ class Authenticator {
 		$this->onAuthenticated = is_null($onAuthenticated)
 			? null
 			: Closure::fromCallable($onAuthenticated);
-		$this->deploymentId = substr($clientKey, 0, strrpos($clientKey, "_"));
-		$this->secret = substr(strrchr($clientKey, "_"), 1);
+		$separator = strrpos($clientKey, "_");
+		if($separator === false || $separator === 0
+		|| strlen(substr($clientKey, $separator + 1)) !== SODIUM_CRYPTO_SECRETBOX_KEYBYTES) {
+			throw new InvalidClientKeyException("Expected a deployment ID and a 32-byte secret separated by an underscore.");
+		}
+		$this->deploymentId = substr($clientKey, 0, $separator);
+		$this->secret = substr($clientKey, $separator + 1);
 
 		$this->session = $this->session ?? new GlobalSessionContainer();
 		$this->redirectHandler = $redirectHandler ?? new RedirectHandler();
@@ -218,8 +223,12 @@ class Authenticator {
 	private function completeAuth():void {
 		$queryData = $this->getQueryData();
 
-		if(!$queryData) {
+		if(is_null($queryData)) {
 			return;
+		}
+
+		if(base64_decode($queryData, true) === false) {
+			throw new ResponseCipherDecryptionException("Invalid response cipher encoding.");
 		}
 
 		if(!isset($this->sessionData)) {
@@ -233,11 +242,7 @@ class Authenticator {
 		$encrypted = new EncryptedMessage($queryData, $secretSessionIv);
 		$key = new Key($this->secret);
 		$decrypted = $encrypted->decrypt($key);
-		$data = json_decode($decrypted);
-		$userData = new UserResponseData(
-			$data->{"id"},
-			$data->{"email"},
-		);
+		$userData = UserResponseData::fromJson((string)$decrypted);
 		$this->user = new User(
 			$userData->getId(),
 			$userData->getEmail(),
@@ -277,12 +282,17 @@ class Authenticator {
 
 		$queryParts = [];
 		parse_str($queryString, $queryParts);
-		if(empty($queryParts[self::RESPONSE_QUERY_PARAMETER])) {
+		if(!array_key_exists(self::RESPONSE_QUERY_PARAMETER, $queryParts)) {
 			return null;
 		}
 
+		$value = $queryParts[self::RESPONSE_QUERY_PARAMETER];
+		if(!is_string($value) || $value === "") {
+			throw new ResponseCipherDecryptionException("Expected a non-empty response cipher string.");
+		}
+
 		return strtr(
-			$queryParts[self::RESPONSE_QUERY_PARAMETER],
+			$value,
 			" ",
 			"+",
 		);
