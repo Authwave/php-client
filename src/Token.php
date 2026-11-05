@@ -51,28 +51,15 @@ class Token {
 // encrypting the original request cipher.
 
 	public function decode(string $base64cipher):BaseResponseData {
+		if($base64cipher === "" || base64_decode($base64cipher, true) === false) {
+			throw new ResponseCipherDecryptionException("Invalid response cipher encoding.");
+		}
 		$encryptedMessage = new EncryptedMessage(
 			$base64cipher,
 			$this->iv,
 		);
 		$decrypted = $encryptedMessage->decrypt($this->key);
 
-		$data = json_decode((string)$decrypted);
-		if(!is_object($data)
-		|| !isset($data->email)
-		|| !is_string($data->email)
-		|| (!isset($data->uuid) && !isset($data->id))) {
-			throw new InvalidUserDataSerializationException();
-		}
-
-		$id = $data->uuid ?? $data->id;
-		if(!is_string($id)) {
-			throw new InvalidUserDataSerializationException();
-		}
-
-		return new UserResponseData(
-			$id,
-			$data->email,
-		);
+		return UserResponseData::fromJson((string)$decrypted);
 	}
 }
