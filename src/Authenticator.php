@@ -259,10 +259,11 @@ class Authenticator {
 	}
 
 	private function tidyResponseData(?string $returnQuery = null):void {
-		$redirectUri = new Uri((string)$this->currentUriPath);
-		if(!is_null($returnQuery)) {
-			$redirectUri = $redirectUri->withQuery($returnQuery);
-		}
+		$path = "/" . ltrim($this->currentUriPath->getPath(), "/");
+		$redirectUri = (new Uri())
+			->withPath($path)
+			->withQuery($returnQuery ?? $this->currentUriPath->getQuery())
+			->withFragment($this->currentUriPath->getFragment());
 
 		$this->redirectHandler->redirect(
 			$redirectUri->withoutQueryValue(self::RESPONSE_QUERY_PARAMETER)

@@ -75,6 +75,8 @@ Without an override, login requests the current URI. The provider accepts root-r
 
 The `authwaveHost` constructor argument selects the provider and defaults to `login.authwave.com`. For a self-hosted provider, supply its scheme, host and optional port, such as `https://login.example.com`.
 
+Callback cleanup redirects use a local path without a scheme or host. The client removes the authentication response parameter while preserving the other query values and fragment.
+
 Logging out
 -----------
 
