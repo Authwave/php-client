@@ -75,6 +75,8 @@ Without an override, login requests the current URI. The provider accepts root-r
 
 The `authwaveHost` constructor argument selects the provider and defaults to `login.authwave.com`. For a self-hosted provider, supply its scheme, host and optional port, such as `https://login.example.com`.
 
+A token can encrypt only its first complete request. Repeating the same request is allowed; a different payload raises TokenReuseException. Create a fresh token for a different action or return query, and do not copy tokens or reuse supplied IVs. Session serialisation retains the binding. Tokens restored from older sessions without a binding can still decrypt responses, but require a fresh token to start another request.
+
 Logging out
 -----------
 

@@ -86,13 +86,14 @@ class Authenticator {
 			$token = new Token($this->secret);
 		}
 
+		$loginUri = $this->getLoginUri($token);
 		$this->sessionData = new SessionData(
 			$token,
 			null,
 			($this->returnUri ?? $this->currentUriPath)->getQuery(),
 		);
 		$this->session->set(SessionData::class, $this->sessionData);
-		$this->redirectHandler->redirect($this->getLoginUri($token));
+		$this->redirectHandler->redirect($loginUri);
 	}
 
 	public function logout(

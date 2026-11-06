@@ -13,6 +13,7 @@ class Token {
 	private Key $key;
 	private InitVector $secretSessionIv;
 	private InitVector $iv;
+	private ?string $requestPlaintext;
 
 	public function __construct(
 		string $secret,
@@ -20,8 +21,16 @@ class Token {
 		?InitVector $iv = null,
 	) {
 		$this->key = new Key($secret);
+		$this->requestPlaintext = null;
 		$this->secretSessionIv = $sessionIv ?? new InitVector();
 		$this->iv = $iv ?? new InitVector();
+	}
+
+	public function __wakeup():void {
+		// Older sessions cannot tell us which plaintext has already used this nonce.
+		if(!array_key_exists("requestPlaintext", get_object_vars($this))) {
+			$this->requestPlaintext = "";
+		}
 	}
 
 	public function getIv():InitVector {
@@ -41,9 +50,13 @@ class Token {
 	 * the client application in the querystring.
 	 */
 	public function generateRequestCipher(string $message = ""):CipherText {
-// TODO: $message should probably always be a KVP, so we can build up the querystring message here without concatenating.
-		$plainTextMessage = new PlainTextMessage($message . "&secretIv=" . $this->getSecretIv(), $this->getIv());
-		return $plainTextMessage->encrypt($this->key);
+		$plaintext = $message . "&secretIv=" . $this->getSecretIv();
+		if(!is_null($this->requestPlaintext) && $this->requestPlaintext !== $plaintext) {
+			throw new TokenReuseException("Create a new token for a different request.");
+		}
+		$cipher = (new PlainTextMessage($plaintext, $this->getIv()))->encrypt($this->key);
+		$this->requestPlaintext = $plaintext;
+		return $cipher;
 	}
 // The response cipher is send from the remote provider back to the client
 // application after a successful authentication and includes a serialised
