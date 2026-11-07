@@ -26,6 +26,7 @@ class Authenticator {
 	private UriInterface $currentUriPath;
 	private ?UriInterface $returnUri = null;
 	private readonly ?Closure $onAuthenticated;
+	private readonly Closure $regenerateSession;
 	private readonly string $deploymentId;
 	private readonly string $secret;
 
@@ -36,6 +37,7 @@ class Authenticator {
 		private ?SessionContainer $session = null,
 		private ?RedirectHandler $redirectHandler = null,
 		?callable $onAuthenticated = null,
+		?callable $regenerateSession = null,
 	) {
 		$this->onAuthenticated = is_null($onAuthenticated)
 			? null
@@ -45,6 +47,16 @@ class Authenticator {
 
 		$this->session = $this->session ?? new GlobalSessionContainer();
 		$this->redirectHandler = $redirectHandler ?? new RedirectHandler();
+		$this->regenerateSession = is_null($regenerateSession)
+			? function():void {
+				if(!$this->session instanceof GlobalSessionContainer) {
+					throw new SessionRegenerationException(
+						"Provide regenerateSession for a custom session container."
+					);
+				}
+				$this->session->regenerate();
+			}
+			: Closure::fromCallable($regenerateSession);
 		if($sessionData = $this->session->get(SessionData::class)) {
 			$this->sessionData = $sessionData;
 
@@ -123,6 +135,7 @@ class Authenticator {
 	public function fakeLogin(string $userId, ?string $email = null, string $redirectTo = "/"):void {
 		$secretIv = new InitVector();
 		$token = new Token($this->secret, $secretIv);
+		($this->regenerateSession)();
 		$sessionData = new SessionData($token);
 		$this->session->set(SessionData::class, $sessionData);
 
@@ -239,6 +252,9 @@ class Authenticator {
 			$data->{"id"},
 			$data->{"email"},
 		);
+		if(!$this->isLoggedIn()) {
+			($this->regenerateSession)();
+		}
 		$this->user = new User(
 			$userData->getId(),
 			$userData->getEmail(),
