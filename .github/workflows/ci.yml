@@ -30,6 +30,22 @@ jobs:
           php_version: ${{ matrix.php }}
           php_extensions: pcntl
 
+      - name: Validate Composer manifest and lock
+        uses: php-actions/composer@v6
+        with:
+          php_version: ${{ matrix.php }}
+          php_extensions: pcntl
+          command: validate
+          only_args: --no-interaction --no-check-publish
+
+      - name: Audit locked dependencies
+        uses: php-actions/composer@v6
+        with:
+          php_version: ${{ matrix.php }}
+          php_extensions: pcntl
+          command: audit
+          only_args: --no-interaction --locked --abandoned=fail
+
       - name: Archive build
         run: mkdir /tmp/github-actions/ && tar --exclude=".git" -cvf /tmp/github-actions/build.tar ./
 
