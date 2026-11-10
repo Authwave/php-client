@@ -118,7 +118,7 @@ session data. Existing session data remains unchanged. Normal application code
 continues after construction and can persist the returned user in the same way
 as during login.
 
-The client adds `Authwave-New-User: received` to the response after validation and
+The client adds `Authwave-User-Change: received` to the response after validation and
 the callback complete. The provider accepts delivery only when the final response
 is 2xx and contains that header. A normal HTML response from an older client has
 no acknowledgement; an application error returning 5xx is also a failed delivery.
@@ -144,10 +144,41 @@ The authenticated encrypted payload contains:
 The existing deployment secret authenticates the message; the public IV is fresh
 for every attempt. The client rejects the wrong action/deployment, tampering,
 invalid identities, and timestamps older than five minutes or more than thirty
-seconds ahead. The time bounds are `Token::NEW_USER_MAX_AGE` and
-`Token::NEW_USER_CLOCK_SKEW`, in seconds. Passwords are never included. Use HTTPS
+seconds ahead. The time bounds are `Token::USER_CHANGE_MAX_AGE` and
+`Token::USER_CHANGE_CLOCK_SKEW`, in seconds. Passwords are never included. Use HTTPS
 in production.
 
+
+Receiving a deleted user
+------------------------
+
+Pass an `onDeleted` callback when constructing `Authenticator`:
+
+```php
+// Assume a UserRepository for persisting users
+$createUserCallback = $userRepository->create(...);
+$deleteUserCallback = $userRepository->delete(...);
+
+$auth = new Authenticator(
+    $clientKey,
+    $currentUri,
+    session: $session,
+    onAuthenticated: $createUserCallback,
+    onDeleted: $deleteUserCallback,
+);
+```
+
+The provider calls the existing client login URL with `AUTHWAVE_DELETE_USER` and
+`AUTHWAVE_DELETE_USER_IV`. Construction validates the encrypted `user-deleted`
+action, deployment, timestamp and identity before calling `onDeleted`. It does not
+invoke `onAuthenticated` or expose the deleted user as logged in. Existing session
+contents remain unchanged. Without a deletion callback the request is rejected.
+
+The callback must complete its deletion before returning and be safe to repeat if
+the user is already absent. Throw on failure so the request is not acknowledged.
+After success the response includes `Authwave-User-Change: received`; the provider
+requires a final 2xx response before deleting its own record. There is no separate
+route or request parsing to implement. Both notification actions use this header.
 
 Documentation
 -------------

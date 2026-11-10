@@ -50,6 +50,39 @@ class AuthenticatorTest extends TestCase {
 		self::assertSame("/login/", hex2bin($query["u"]));
 	}
 
+	#[\PHPUnit\Framework\Attributes\RunInSeparateProcess]
+	#[\PHPUnit\Framework\Attributes\PreserveGlobalState(false)]
+	#[\PHPUnit\Framework\Attributes\DataProvider("userChangeActions")]
+	public function testConstruct_acceptsCallableMethodsForUserChanges(string $action, string $queryKey):void {
+		[$cipher, $iv] = $this->newUserNotification(json_encode([
+			"action" => $action, "deploymentId" => "DEPLOYMENT_test", "issuedAt" => time(),
+			"id" => "changed-user", "email" => "changed@example.test",
+		], JSON_THROW_ON_ERROR));
+		$created = new \ArrayObject();
+		$deleted = new \ArrayObject();
+		$uri = new Uri("/login/?" . http_build_query([
+			"page" => "2", $queryKey => $cipher, $queryKey . "_IV" => $iv,
+		], encoding_type: PHP_QUERY_RFC3986));
+		$sut = new Authenticator("DEPLOYMENT_test_" . str_repeat("0", 32), $uri,
+			onAuthenticated: [$created, "append"], onDeleted: [$deleted, "append"]);
+
+		$expected = $action === "user-created" ? $created : $deleted;
+		$other = $action === "user-created" ? $deleted : $created;
+		self::assertCount(1, $expected);
+		self::assertCount(0, $other);
+		self::assertSame("changed-user", $expected[0]->id);
+		self::assertSame("changed@example.test", $expected[0]->email);
+		self::assertSame($action === "user-created", $sut->isLoggedIn());
+
+		parse_str($sut->getLoginUri(new Token(str_repeat("0", 32)))->getQuery(), $query);
+		self::assertSame("/login/?page=2", hex2bin($query["u"]));
+	}
+
+	public static function userChangeActions():iterable {
+		yield "creation" => ["user-created", "AUTHWAVE_NEW_USER"];
+		yield "deletion" => ["user-deleted", "AUTHWAVE_DELETE_USER"];
+	}
+
 	/** @return array{string, string} */
 	private function newUserNotification(?string $plain = null):array {
 		$plain ??= json_encode(["action" => "user-created", "deploymentId" => "DEPLOYMENT_test", "issuedAt" => time(),

@@ -3,6 +3,7 @@ require dirname(__DIR__, 3) . "/vendor/autoload.php";
 
 $secret = str_repeat("0", 32);
 $callbackUser = null;
+$deletedUser = null;
 $sessionBefore = null;
 
 if(($_GET["session"] ?? "") === "existing") {
@@ -10,7 +11,7 @@ if(($_GET["session"] ?? "") === "existing") {
 		new Authwave\Token($secret), new Authwave\ResponseData\UserResponseData("existing", "existing@example.test"))];
 	$sessionBefore = $_SESSION;
 }
-elseif(!isset($_GET["AUTHWAVE_NEW_USER"])) {
+elseif(!isset($_GET["AUTHWAVE_NEW_USER"]) && !isset($_GET["AUTHWAVE_DELETE_USER"])) {
 	$_SESSION = [];
 	$sessionBefore = [];
 }
@@ -23,6 +24,12 @@ try {
 			}
 
 			$callbackUser = $user->id;
+		}, onDeleted: isset($_GET["no-delete-handler"]) ? null : function(Authwave\AuthUser $user)use(&$deletedUser):void {
+			if(($_GET["failure"] ?? "") === "deletion") {
+				throw new RuntimeException("Application deletion failed");
+			}
+
+			$deletedUser = $user->id;
 		});
 
 	if(($_GET["failure"] ?? "") === "page") {
@@ -34,6 +41,7 @@ try {
 		"id" => $sut->isLoggedIn() ? $sut->getAuthUser()->id : null,
 		"email" => $sut->isLoggedIn() ? $sut->getAuthUser()->email : null,
 		"callbackUser" => $callbackUser,
+		"deletedUser" => $deletedUser,
 		"sessionUnchanged" => ($_SESSION ?? null) === $sessionBefore,
 	], JSON_THROW_ON_ERROR);
 }

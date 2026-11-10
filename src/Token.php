@@ -10,8 +10,8 @@ use GT\Cipher\Message\EncryptedMessage;
 use GT\Cipher\Message\PlainTextMessage;
 
 class Token {
-	const NEW_USER_MAX_AGE = 300;
-	const NEW_USER_CLOCK_SKEW = 30;
+	const USER_CHANGE_MAX_AGE = 300;
+	const USER_CHANGE_CLOCK_SKEW = 30;
 
 	private Key $key;
 	private InitVector $secretSessionIv;
@@ -66,41 +66,41 @@ class Token {
 // UserData object, encrypted using the secret IV, which was created when
 // encrypting the original request cipher.
 
-	public function decodeNewUser(string $cipher, string $iv, string $deploymentId):AuthUser {
+	public function decodeUserChange(string $cipher, string $iv, string $deploymentId, string $action):AuthUser {
 		$bytes = base64_decode($iv, true);
 
 		if($bytes === false || strlen($bytes) !== SODIUM_CRYPTO_SECRETBOX_NONCEBYTES) {
-			throw new InvalidUserDataSerializationException("Invalid new-user IV.");
+			throw new InvalidUserDataSerializationException("Invalid user change IV.");
 		}
 
 		$vector = (new InitVector())->withBytes($bytes);
 		$message = new EncryptedMessage($cipher, $vector);
 		$decrypted = $message->decrypt($this->key);
 		$data = json_decode((string)$decrypted);
-		$this->validateNewUser($data, $deploymentId);
+		$this->validateUserChange($data, $deploymentId, $action);
 
 		return new AuthUser($data->id, $data->email);
 	}
 
-	private function validateNewUser(mixed $data, string $deploymentId):void {
+	private function validateUserChange(mixed $data, string $deploymentId, string $action):void {
 		if(!is_object($data)
 		|| !isset($data->id, $data->email, $data->issuedAt)
 		|| !is_string($data->id) || trim($data->id) === ""
 		|| !is_string($data->email) || trim($data->email) === ""
 		|| !is_int($data->issuedAt)) {
-			throw new InvalidUserDataSerializationException("Invalid new-user data.");
+			throw new InvalidUserDataSerializationException("Invalid user change data.");
 		}
 
-		if(($data->action ?? null) !== "user-created"
+		if(($data->action ?? null) !== $action
 		|| ($data->deploymentId ?? null) !== $deploymentId) {
 			throw new InvalidUserDataSerializationException("Unexpected notification action or deployment.");
 		}
 
 		$now = time();
 
-		if($data->issuedAt < $now - self::NEW_USER_MAX_AGE
-		|| $data->issuedAt > $now + self::NEW_USER_CLOCK_SKEW) {
-			throw new InvalidUserDataSerializationException("New-user notification is outside its time window.");
+		if($data->issuedAt < $now - self::USER_CHANGE_MAX_AGE
+		|| $data->issuedAt > $now + self::USER_CHANGE_CLOCK_SKEW) {
+			throw new InvalidUserDataSerializationException("User change notification is outside its time window.");
 		}
 	}
 

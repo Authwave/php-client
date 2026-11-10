@@ -43,7 +43,7 @@ class AuthenticatorTest extends TestCase {
 	public function testConstruct_automaticallyExposesTheNewUserAndRunsTheNormalCallback(string $session):void {
 		[$status, $headers, $body] = $this->request($this->notification() . "&session=$session");
 		self::assertSame(200, $status);
-		self::assertContains("Authwave-New-User: received", $headers);
+		self::assertContains("Authwave-User-Change: received", $headers);
 		$data = json_decode($body, flags: JSON_THROW_ON_ERROR);
 		self::assertTrue($data->loggedIn);
 		self::assertSame("new-user", $data->id);
@@ -61,7 +61,7 @@ class AuthenticatorTest extends TestCase {
 	public function testConstruct_rejectsInvalidNotificationsWithoutAcknowledgement(string $query):void {
 		[$status, $headers] = $this->request($query);
 		self::assertSame(400, $status);
-		self::assertNotContains("Authwave-New-User: received", $headers);
+		self::assertNotContains("Authwave-User-Change: received", $headers);
 	}
 
 	public static function invalidRequests():iterable {
@@ -70,12 +70,18 @@ class AuthenticatorTest extends TestCase {
 		yield ["AUTHWAVE_NEW_USER[]=invalid&AUTHWAVE_NEW_USER_IV=invalid"];
 		yield ["AUTHWAVE_NEW_USER=invalid&AUTHWAVE_NEW_USER_IV[]=invalid"];
 		yield ["AUTHWAVE_NEW_USER=&AUTHWAVE_NEW_USER_IV="];
+		yield ["AUTHWAVE_DELETE_USER=invalid"];
+		yield ["AUTHWAVE_DELETE_USER=invalid&AUTHWAVE_DELETE_USER_IV=invalid"];
+		yield ["AUTHWAVE_DELETE_USER[]=invalid&AUTHWAVE_DELETE_USER_IV=invalid"];
+		yield ["AUTHWAVE_DELETE_USER=invalid&AUTHWAVE_DELETE_USER_IV[]=invalid"];
+		yield ["AUTHWAVE_DELETE_USER=&AUTHWAVE_DELETE_USER_IV="];
+		yield ["AUTHWAVE_NEW_USER=invalid&AUTHWAVE_DELETE_USER=invalid"];
 	}
 
 	public function testConstruct_callbackFailureIsNotAcknowledged():void {
 		[$status, $headers] = $this->request($this->notification() . "&failure=callback");
 		self::assertSame(500, $status);
-		self::assertNotContains("Authwave-New-User: received", $headers);
+		self::assertNotContains("Authwave-User-Change: received", $headers);
 	}
 
 	public function testConstruct_applicationFailureAfterConstructionRemainsAnHttpFailure():void {
@@ -86,18 +92,68 @@ class AuthenticatorTest extends TestCase {
 	public function testConstruct_normalRequestsDoNotAcknowledgeNewUsers():void {
 		[$status, $headers, $body] = $this->request("");
 		self::assertSame(200, $status);
-		self::assertNotContains("Authwave-New-User: received", $headers);
+		self::assertNotContains("Authwave-User-Change: received", $headers);
 		self::assertFalse(json_decode($body)->loggedIn);
 	}
 
-	private function notification():string {
+	public function testConstruct_deletionInvokesOnlyTheDeletionHandler():void {
+		[$status, $headers, $body] = $this->request($this->notification("user-deleted"));
+		self::assertSame(200, $status);
+		self::assertContains("Authwave-User-Change: received", $headers);
+		$data = json_decode($body, flags: JSON_THROW_ON_ERROR);
+		self::assertSame("new-user", $data->deletedUser);
+		self::assertFalse($data->loggedIn);
+		self::assertNull($data->callbackUser);
+	}
+
+	public function testConstruct_deletionWithoutAHandlerIsNotAcknowledged():void {
+		[$status, $headers] = $this->request($this->notification("user-deleted") . "&no-delete-handler=1");
+		self::assertSame(400, $status);
+		self::assertNotContains("Authwave-User-Change: received", $headers);
+	}
+
+	public function testConstruct_failedDeletionIsNotAcknowledged():void {
+		[$status, $headers] = $this->request($this->notification("user-deleted") . "&failure=deletion");
+
+		self::assertSame(500, $status);
+		self::assertNotContains("Authwave-User-Change: received", $headers);
+	}
+
+	public function testConstruct_deletionPreservesExistingSessionData():void {
+		[$status, $headers, $body] = $this->request($this->notification("user-deleted") . "&session=existing");
+		$data = json_decode($body);
+
+		self::assertSame(200, $status);
+		self::assertTrue($data->sessionUnchanged);
+		self::assertFalse($data->loggedIn);
+		self::assertSame("new-user", $data->deletedUser);
+		self::assertContains("Authwave-User-Change: received", $headers);
+	}
+
+	public function testConstruct_createPayloadCannotBeUsedForDeletion():void {
+		$query = str_replace("AUTHWAVE_NEW_USER", "AUTHWAVE_DELETE_USER", $this->notification());
+		[$status, $headers] = $this->request($query);
+		self::assertSame(400, $status);
+		self::assertNotContains("Authwave-User-Change: received", $headers);
+	}
+
+	public function testConstruct_deletePayloadCannotBeUsedForCreation():void {
+		$query = str_replace("AUTHWAVE_DELETE_USER", "AUTHWAVE_NEW_USER", $this->notification("user-deleted"));
+		[$status, $headers] = $this->request($query);
+
+		self::assertSame(400, $status);
+		self::assertNotContains("Authwave-User-Change: received", $headers);
+	}
+
+	private function notification(string $action = "user-created"):string {
 		$vector = new InitVector();
 		$message = new PlainTextMessage(json_encode([
-			"action" => "user-created", "deploymentId" => "DEPLOYMENT_test", "issuedAt" => time(),
+			"action" => $action, "deploymentId" => "DEPLOYMENT_test", "issuedAt" => time(),
 			"id" => "new-user", "email" => "new@example.test",
 		], JSON_THROW_ON_ERROR), $vector);
-		return http_build_query(["AUTHWAVE_NEW_USER" => (string)$message->encrypt(new Key(str_repeat("0", 32))),
-			"AUTHWAVE_NEW_USER_IV" => (string)$vector]);
+		$key = $action === "user-deleted" ? "AUTHWAVE_DELETE_USER" : "AUTHWAVE_NEW_USER";
+		return http_build_query([$key => (string)$message->encrypt(new Key(str_repeat("0", 32))),
+			$key . "_IV" => (string)$vector]);
 	}
 
 	private function request(string $query):array {

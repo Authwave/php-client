@@ -12,7 +12,7 @@ use GT\Cipher\Key;
 use GT\Cipher\Message\EncryptedMessage;
 use GT\Cipher\Message\PlainTextMessage;
 use GT\Http\Uri;
-use GT\Logger\Log;
+use Gt\Logger\Log;
 use GT\Session\SessionContainer;
 use Psr\Http\Message\UriInterface;
 
@@ -21,7 +21,9 @@ class Authenticator {
 	const RESPONSE_QUERY_PARAMETER = "AUTHWAVE_RESPONSE_DATA";
 	const NEW_USER_QUERY_PARAMETER = "AUTHWAVE_NEW_USER";
 	const NEW_USER_IV_QUERY_PARAMETER = "AUTHWAVE_NEW_USER_IV";
-	const NEW_USER_ACKNOWLEDGEMENT_HEADER = "Authwave-New-User";
+	const DELETE_USER_QUERY_PARAMETER = "AUTHWAVE_DELETE_USER";
+	const DELETE_USER_IV_QUERY_PARAMETER = "AUTHWAVE_DELETE_USER_IV";
+	const USER_CHANGE_ACKNOWLEDGEMENT_HEADER = "Authwave-User-Change";
 	const FAKE_EMAIL = "fakelogin@authwave.com";
 
 	private SessionData $sessionData;
@@ -29,6 +31,7 @@ class Authenticator {
 	private UriInterface $currentUriPath;
 	private ?UriInterface $returnUri = null;
 	private readonly ?Closure $onAuthenticated;
+	private readonly ?Closure $onDeleted;
 	private readonly string $deploymentId;
 	private readonly string $secret;
 
@@ -39,16 +42,21 @@ class Authenticator {
 		private ?SessionContainer $session = null,
 		private ?RedirectHandler $redirectHandler = null,
 		?callable $onAuthenticated = null,
+		?callable $onDeleted = null,
 	) {
 		$this->onAuthenticated = is_null($onAuthenticated)
 			? null
-			: Closure::fromCallable($onAuthenticated);
+			: $onAuthenticated(...);
+		$this->onDeleted = $onDeleted === null
+			? null
+			: $onDeleted(...);
+
 		$this->deploymentId = substr($clientKey, 0, strrpos($clientKey, "_"));
 		$this->secret = substr(strrchr($clientKey, "_"), 1);
 
 		$this->currentUriPath = is_string($currentUriPath) ? new Uri($currentUriPath) : $currentUriPath;
 
-		if($this->completeNewUser()) {
+		if($this->completeUserChange()) {
 			return;
 		}
 
@@ -201,12 +209,8 @@ class Authenticator {
 	}
 
 	private function resolveLogoutRedirect(
-		string|UriInterface|null $redirectTo,
+		string|UriInterface $redirectTo,
 	):UriInterface {
-		if(is_null($redirectTo)) {
-			return $this->currentUriPath;
-		}
-
 		if(is_string($redirectTo) && str_starts_with($redirectTo, "?")) {
 			return $this->currentUriPath->withQuery(substr($redirectTo, 1));
 		}
@@ -221,31 +225,59 @@ class Authenticator {
 	}
 
 	/** Reads the incoming HTTP notification before normal session restoration. */
-	private function completeNewUser():bool {
+	private function completeUserChange():bool {
 		parse_str($this->currentUriPath->getQuery(), $query);
 
-		if(!array_key_exists(self::NEW_USER_QUERY_PARAMETER, $query)) {
+		$queryKey = self::NEW_USER_QUERY_PARAMETER;
+		$vectorKey = self::NEW_USER_IV_QUERY_PARAMETER;
+		$action = "user-created";
+
+		if(array_key_exists(self::DELETE_USER_QUERY_PARAMETER, $query)) {
+			if(array_key_exists(self::NEW_USER_QUERY_PARAMETER, $query)) {
+				throw new InvalidUserDataSerializationException("Ambiguous user change notification.");
+			}
+
+			$queryKey = self::DELETE_USER_QUERY_PARAMETER;
+			$vectorKey = self::DELETE_USER_IV_QUERY_PARAMETER;
+			$action = "user-deleted";
+		}
+
+		if(!array_key_exists($queryKey, $query)) {
 			return false;
 		}
 
-		$cipher = $query[self::NEW_USER_QUERY_PARAMETER];
-		$vector = $query[self::NEW_USER_IV_QUERY_PARAMETER] ?? null;
+		$cipher = $query[$queryKey];
+		$vector = $query[$vectorKey] ?? null;
 
 		if(!is_string($cipher) || !is_string($vector)) {
-			throw new InvalidUserDataSerializationException("New-user notifications require cipher and IV strings.");
+			throw new InvalidUserDataSerializationException("User change notifications require cipher and IV strings.");
 		}
 
 		$token = new Token($this->secret);
-		$data = $token->decodeNewUser($cipher, $vector, $this->deploymentId);
+		$data = $token->decodeUserChange($cipher, $vector, $this->deploymentId, $action);
 		$this->currentUriPath = (new Uri((string)$this->currentUriPath))
-			->withoutQueryValue(self::NEW_USER_QUERY_PARAMETER)
-			->withoutQueryValue(self::NEW_USER_IV_QUERY_PARAMETER);
+			->withoutQueryValue($queryKey)
+			->withoutQueryValue($vectorKey);
 
-		$this->user = new User($data->id, $data->email);
-		$this->onAuthenticated?->__invoke($this->user);
-		header(self::NEW_USER_ACKNOWLEDGEMENT_HEADER . ": received");
+		if($action === "user-deleted") {
+			$this->invokeDeletionCallback($data);
+		}
+		else {
+			$this->user = new User($data->id, $data->email);
+			$this->onAuthenticated?->__invoke($this->user);
+		}
+
+		header(self::USER_CHANGE_ACKNOWLEDGEMENT_HEADER . ": received");
 
 		return true;
+	}
+
+	private function invokeDeletionCallback(AuthUser $user):void {
+		if($this->onDeleted === null) {
+			throw new AuthwaveException("Configure onDeleted to handle user deletion.");
+		}
+
+		($this->onDeleted)($user);
 	}
 
 	private function completeAuth():void {
@@ -304,10 +336,6 @@ class Authenticator {
 
 	private function getQueryData():?string {
 		$queryString = $this->currentUriPath->getQuery();
-		if(!$queryString) {
-			return null;
-		}
-
 		$queryParts = [];
 		parse_str($queryString, $queryParts);
 		if(empty($queryParts[self::RESPONSE_QUERY_PARAMETER])) {

@@ -13,18 +13,32 @@ use PHPUnit\Framework\TestCase;
 
 #[AllowMockObjectsWithoutExpectations]
 class TokenTest extends TestCase {
-	public function testDecodeNewUser_acceptsAStandaloneProviderMessage():void {
+	public function testDecodeUserChange_acceptsDeletionButRejectsAnActionSwap():void {
+		[$cipher, $iv] = $this->newUserNotification(json_encode([
+			"action" => "user-deleted", "deploymentId" => "DEPLOYMENT_test", "issuedAt" => time(),
+			"id" => "deleted-user", "email" => "deleted@example.test",
+		]));
+		$sut = new Token(str_repeat("0", 32));
+
+		$user = $sut->decodeUserChange($cipher, $iv, "DEPLOYMENT_test", "user-deleted");
+
+		self::assertSame("deleted-user", $user->id);
+		$this->expectException(InvalidUserDataSerializationException::class);
+		$sut->decodeUserChange($cipher, $iv, "DEPLOYMENT_test", "user-created");
+	}
+
+	public function testDecodeUserChange_acceptsAStandaloneProviderMessage():void {
 		[$cipher, $iv] = $this->newUserNotification();
 		$sut = new Token(str_repeat("0", 32));
 
-		$user = $sut->decodeNewUser($cipher, $iv, "DEPLOYMENT_test");
+		$user = $sut->decodeUserChange($cipher, $iv, "DEPLOYMENT_test", "user-created");
 
 		self::assertSame("new-user", $user->id);
 		self::assertSame("new@example.test", $user->email);
 	}
 
 	#[\PHPUnit\Framework\Attributes\DataProvider("invalidNotifications")]
-	public function testDecodeNewUser_rejectsMalformedOrUnrelatedNotifications(string $case):void {
+	public function testDecodeUserChange_rejectsMalformedOrUnrelatedNotifications(string $case):void {
 		$secret = str_repeat("0", 32);
 		$data = ["action" => "user-created", "deploymentId" => "DEPLOYMENT_test", "issuedAt" => time(),
 			"id" => "new-user", "email" => "new@example.test"];
@@ -72,7 +86,7 @@ class TokenTest extends TestCase {
 		$sut = new Token($secret);
 		$this->expectException(\Authwave\InvalidUserDataSerializationException::class);
 
-		$sut->decodeNewUser($cipher, $iv, "DEPLOYMENT_test");
+		$sut->decodeUserChange($cipher, $iv, "DEPLOYMENT_test", "user-created");
 	}
 
 	public static function invalidNotifications():iterable {
@@ -83,7 +97,7 @@ class TokenTest extends TestCase {
 	}
 
 	#[\PHPUnit\Framework\Attributes\DataProvider("invalidNotificationEncryption")]
-	public function testDecodeNewUser_rejectsInvalidEncryption(string $case):void {
+	public function testDecodeUserChange_rejectsInvalidEncryption(string $case):void {
 		$secret = str_repeat("0", 32);
 		[$cipher, $iv] = $this->newUserNotification();
 		$exception = \GT\Cipher\Message\DecryptionFailureException::class;
@@ -104,7 +118,7 @@ class TokenTest extends TestCase {
 		$sut = new Token($secret);
 		$this->expectException($exception);
 
-		$sut->decodeNewUser($cipher, $iv, "DEPLOYMENT_test");
+		$sut->decodeUserChange($cipher, $iv, "DEPLOYMENT_test", "user-created");
 	}
 
 	public static function invalidNotificationEncryption():iterable {
