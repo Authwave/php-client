@@ -19,6 +19,9 @@ use Psr\Http\Message\UriInterface;
 class Authenticator {
 	const SESSION_STORE_KEY = "AUTHWAVE_CONSUMER_SESSION";
 	const RESPONSE_QUERY_PARAMETER = "AUTHWAVE_RESPONSE_DATA";
+	const NEW_USER_QUERY_PARAMETER = "AUTHWAVE_NEW_USER";
+	const NEW_USER_IV_QUERY_PARAMETER = "AUTHWAVE_NEW_USER_IV";
+	const NEW_USER_ACKNOWLEDGEMENT_HEADER = "Authwave-New-User";
 	const FAKE_EMAIL = "fakelogin@authwave.com";
 
 	private SessionData $sessionData;
@@ -43,6 +46,12 @@ class Authenticator {
 		$this->deploymentId = substr($clientKey, 0, strrpos($clientKey, "_"));
 		$this->secret = substr(strrchr($clientKey, "_"), 1);
 
+		$this->currentUriPath = is_string($currentUriPath) ? new Uri($currentUriPath) : $currentUriPath;
+
+		if($this->completeNewUser()) {
+			return;
+		}
+
 		$this->session = $this->session ?? new GlobalSessionContainer();
 		$this->redirectHandler = $redirectHandler ?? new RedirectHandler();
 		if($sessionData = $this->session->get(SessionData::class)) {
@@ -59,11 +68,6 @@ class Authenticator {
 			}
 			catch(NotLoggedInException) {}
 		}
-
-		if(is_string($currentUriPath)) {
-			$currentUriPath = new Uri($currentUriPath);
-		}
-		$this->currentUriPath = $currentUriPath;
 
 		$this->completeAuth();
 	}
@@ -213,6 +217,34 @@ class Authenticator {
 
 	public function getAdminUri():UriInterface {
 		return new AdminUri($this->authwaveHost);
+	}
+
+	/** Reads the incoming HTTP notification before normal session restoration. */
+	private function completeNewUser():bool {
+		parse_str($this->currentUriPath->getQuery(), $query);
+
+		if(!array_key_exists(self::NEW_USER_QUERY_PARAMETER, $query)) {
+			return false;
+		}
+
+		$cipher = $query[self::NEW_USER_QUERY_PARAMETER];
+		$vector = $query[self::NEW_USER_IV_QUERY_PARAMETER] ?? null;
+
+		if(!is_string($cipher) || !is_string($vector)) {
+			throw new InvalidUserDataSerializationException("New-user notifications require cipher and IV strings.");
+		}
+
+		$token = new Token($this->secret);
+		$data = $token->decodeNewUser($cipher, $vector, $this->deploymentId);
+		$this->currentUriPath = (new Uri((string)$this->currentUriPath))
+			->withoutQueryValue(self::NEW_USER_QUERY_PARAMETER)
+			->withoutQueryValue(self::NEW_USER_IV_QUERY_PARAMETER);
+
+		$this->user = new User($data->id, $data->email);
+		$this->onAuthenticated?->__invoke($this->user);
+		header(self::NEW_USER_ACKNOWLEDGEMENT_HEADER . ": received");
+
+		return true;
 	}
 
 	private function completeAuth():void {

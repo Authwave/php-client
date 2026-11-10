@@ -3,8 +3,8 @@ namespace Authwave\Test\ProviderUri;
 
 use Authwave\ProviderUri\LoginUri;
 use Authwave\Token;
-use Gt\Cipher\CipherText;
-use Gt\Cipher\InitVector;
+use GT\Cipher\CipherText;
+use GT\Cipher\InitVector;
 use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
 use PHPUnit\Framework\TestCase;
 use Psr\Http\Message\UriInterface;

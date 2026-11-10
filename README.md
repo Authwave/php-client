@@ -88,6 +88,65 @@ The client clears its stored and in-memory authentication state, preserving unre
 
 The default redirect handler ends the request. Custom handlers must transfer control appropriately; the authenticator is already logged out when they run. The default development fake user is logged out locally without visiting the provider.
 
+Receiving an administrator-created user
+--------------------------------------
+
+Construct `Authenticator` as usual, passing the current URI including its query
+string. It automatically recognises `AUTHWAVE_NEW_USER` and `AUTHWAVE_NEW_USER_IV`
+in the query string, validates and decrypts the payload, and exposes the identity through
+`isLoggedIn()` and `getAuthUser()` for this server-to-server request. The existing
+`onAuthenticated` callback also runs, just as it does after browser login.
+
+Your existing user creation/update code can therefore stay in that callback or
+in the normal application flow that reads `getAuthUser()`. Upsert by Authwave user
+ID so repeated deliveries are safe. There is no new route, request parsing, or
+additional callback to implement. For example, reuse your existing save handler:
+
+```php
+$auth = new Authenticator(
+    $clientKey,
+    $currentUri,
+    session: $session,
+    onAuthenticated: $saveUser,
+);
+```
+
+The notification does not require a pending login token or write authentication
+session data. Existing session data remains unchanged. Normal application code
+continues after construction and can persist the returned user in the same way
+as during login.
+
+The client adds `Authwave-New-User: received` to the response after validation and
+the callback complete. The provider accepts delivery only when the final response
+is 2xx and contains that header. A normal HTML response from an older client has
+no acknowledgement; an application error returning 5xx is also a failed delivery.
+There is no special HTTP status or response body for the application to produce.
+
+The provider makes a GET request to the existing client login URL. The
+`AUTHWAVE_NEW_USER` parameter contains the ciphertext and `AUTHWAVE_NEW_USER_IV`
+contains the public IV. Both are URL-encoded, preserving base64 characters such as
+`+`. Authenticator removes both parameters from its stored URI before invoking the
+application callback. No request body or access to superglobals is needed.
+The authenticated encrypted payload contains:
+
+```php
+[
+    "action" => "user-created",
+    "deploymentId" => $deploymentId,
+    "issuedAt" => time(),
+    "id" => $userId,
+    "email" => $email,
+]
+```
+
+The existing deployment secret authenticates the message; the public IV is fresh
+for every attempt. The client rejects the wrong action/deployment, tampering,
+invalid identities, and timestamps older than five minutes or more than thirty
+seconds ahead. The time bounds are `Token::NEW_USER_MAX_AGE` and
+`Token::NEW_USER_CLOCK_SKEW`, in seconds. Passwords are never included. Use HTTPS
+in production.
+
+
 Documentation
 -------------
 

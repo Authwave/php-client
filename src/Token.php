@@ -10,6 +10,9 @@ use GT\Cipher\Message\EncryptedMessage;
 use GT\Cipher\Message\PlainTextMessage;
 
 class Token {
+	const NEW_USER_MAX_AGE = 300;
+	const NEW_USER_CLOCK_SKEW = 30;
+
 	private Key $key;
 	private InitVector $secretSessionIv;
 	private InitVector $iv;
@@ -49,6 +52,44 @@ class Token {
 // application after a successful authentication and includes a serialised
 // UserData object, encrypted using the secret IV, which was created when
 // encrypting the original request cipher.
+
+	public function decodeNewUser(string $cipher, string $iv, string $deploymentId):AuthUser {
+		$bytes = base64_decode($iv, true);
+
+		if($bytes === false || strlen($bytes) !== SODIUM_CRYPTO_SECRETBOX_NONCEBYTES) {
+			throw new InvalidUserDataSerializationException("Invalid new-user IV.");
+		}
+
+		$vector = (new InitVector())->withBytes($bytes);
+		$message = new EncryptedMessage($cipher, $vector);
+		$decrypted = $message->decrypt($this->key);
+		$data = json_decode((string)$decrypted);
+		$this->validateNewUser($data, $deploymentId);
+
+		return new AuthUser($data->id, $data->email);
+	}
+
+	private function validateNewUser(mixed $data, string $deploymentId):void {
+		if(!is_object($data)
+		|| !isset($data->id, $data->email, $data->issuedAt)
+		|| !is_string($data->id) || trim($data->id) === ""
+		|| !is_string($data->email) || trim($data->email) === ""
+		|| !is_int($data->issuedAt)) {
+			throw new InvalidUserDataSerializationException("Invalid new-user data.");
+		}
+
+		if(($data->action ?? null) !== "user-created"
+		|| ($data->deploymentId ?? null) !== $deploymentId) {
+			throw new InvalidUserDataSerializationException("Unexpected notification action or deployment.");
+		}
+
+		$now = time();
+
+		if($data->issuedAt < $now - self::NEW_USER_MAX_AGE
+		|| $data->issuedAt > $now + self::NEW_USER_CLOCK_SKEW) {
+			throw new InvalidUserDataSerializationException("New-user notification is outside its time window.");
+		}
+	}
 
 	public function decode(string $base64cipher):BaseResponseData {
 		$encryptedMessage = new EncryptedMessage(

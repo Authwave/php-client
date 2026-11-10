@@ -12,9 +12,9 @@ use Authwave\SessionData;
 use Authwave\SessionNotStartedException;
 use Authwave\Token;
 use Authwave\ResponseData\UserResponseData;
-use Gt\Cipher\CipherText;
-use Gt\Cipher\InitVector;
-use Gt\Http\Uri;
+use GT\Cipher\CipherText;
+use GT\Cipher\InitVector;
+use GT\Http\Uri;
 use PHPUnit\Framework\Attributes\AllowMockObjectsWithoutExpectations;
 use PHPUnit\Framework\Attributes\WithoutErrorHandler;
 use PHPUnit\Framework\TestCase;
@@ -22,7 +22,44 @@ use Psr\Http\Message\UriInterface;
 
 #[AllowMockObjectsWithoutExpectations]
 class AuthenticatorTest extends TestCase {
-	public function testResponseCipherPreservesRawPlusCharacters():void {
+	#[\PHPUnit\Framework\Attributes\RunInSeparateProcess]
+	#[\PHPUnit\Framework\Attributes\PreserveGlobalState(false)]
+	public function testConstruct_notificationUriDoesNotReadProtectedGlobals():void {
+		[$cipher, $iv] = $this->newUserNotification();
+		$uri = new Uri("/login/?" . http_build_query([
+			"AUTHWAVE_NEW_USER" => $cipher, "AUTHWAVE_NEW_USER_IV" => $iv,
+		], encoding_type: PHP_QUERY_RFC3986));
+
+		$protected = $this->createMock(\ArrayAccess::class);
+		$protected->expects(self::never())->method("offsetExists");
+		$protected->expects(self::never())->method("offsetGet");
+		$server = $_SERVER;
+		$_SERVER = $protected;
+
+		try {
+			$sut = new Authenticator("DEPLOYMENT_test_" . str_repeat("0", 32), $uri);
+		}
+		finally {
+			$_SERVER = $server;
+		}
+
+		self::assertTrue($sut->isLoggedIn());
+		self::assertSame("new-user", $sut->getAuthUser()->id);
+		self::assertSame("new@example.test", $sut->getAuthUser()->email);
+		parse_str($sut->getLoginUri(new Token(str_repeat("0", 32)))->getQuery(), $query);
+		self::assertSame("/login/", hex2bin($query["u"]));
+	}
+
+	/** @return array{string, string} */
+	private function newUserNotification(?string $plain = null):array {
+		$plain ??= json_encode(["action" => "user-created", "deploymentId" => "DEPLOYMENT_test", "issuedAt" => time(),
+			"id" => "new-user", "email" => "new@example.test"], JSON_THROW_ON_ERROR);
+		$iv = new InitVector();
+		$message = new \GT\Cipher\Message\PlainTextMessage($plain, $iv);
+		return [(string)$message->encrypt(new \GT\Cipher\Key(str_repeat("0", 32))), (string)$iv];
+	}
+
+	public function testGetQueryData_preservesRawPlusCharacters():void {
 		$reflection = new \ReflectionClass(Authenticator::class);
 		/** @var Authenticator $sut */
 		$sut = $reflection->newInstanceWithoutConstructor();
@@ -36,7 +73,7 @@ class AuthenticatorTest extends TestCase {
 		self::assertSame("abc+def==", $getQueryData->invoke($sut));
 	}
 
-	public function testConstructWithDefaultSessionNotStarted() {
+	public function testConstruct_withoutStartedSessionThrows() {
 		self::expectException(SessionNotStartedException::class);
 		new Authenticator(
 			"test-key",
@@ -44,7 +81,7 @@ class AuthenticatorTest extends TestCase {
 		);
 	}
 
-	public function testIsLoggedInFalseByDefault() {
+	public function testIsLoggedIn_falseWithoutSessionData() {
 		$_SESSION = [];
 		$sut = new Authenticator(
 			"test-key",
@@ -53,7 +90,7 @@ class AuthenticatorTest extends TestCase {
 		self::assertFalse($sut->isLoggedIn());
 	}
 
-	public function testIsLoggedInTrueWhenSessionDataSet() {
+	public function testIsLoggedIn_trueWithSessionData() {
 		$userData = self::createMock(UserResponseData::class);
 		$sessionData = self::createMock(SessionData::class);
 		$sessionData->expects(self::once())
@@ -72,7 +109,7 @@ class AuthenticatorTest extends TestCase {
 		self::assertTrue($sut->isLoggedIn());
 	}
 
-	public function testSessionWithoutResponseDataIsNotLoggedIn():void {
+	public function testIsLoggedIn_falseWithoutResponseData():void {
 		$_SESSION = [SessionData::class => new SessionData(new Token(str_repeat("s", 32)))];
 
 		$sut = new Authenticator("deployment_" . str_repeat("s", 32), "/");
@@ -80,7 +117,7 @@ class AuthenticatorTest extends TestCase {
 		self::assertFalse($sut->isLoggedIn());
 	}
 
-	public function testLoginCreatesAndStoresDefaultToken():void {
+	public function testLogin_createsAndStoresDefaultToken():void {
 		$_SESSION = [];
 		$redirectHandler = self::createMock(RedirectHandler::class);
 		$redirectHandler->expects(self::once())->method("redirect");
@@ -96,7 +133,7 @@ class AuthenticatorTest extends TestCase {
 		self::assertInstanceOf(Token::class, $_SESSION[SessionData::class]->getToken());
 	}
 
-	public function testLoginRedirectsWithCorrectQueryString() {
+	public function testLogin_redirectsWithCorrectQueryString() {
 		$_SESSION = [];
 
 		$deploymentId = uniqid("deployment-");
@@ -144,7 +181,7 @@ class AuthenticatorTest extends TestCase {
 		self::assertSame("signup=free", $_SESSION[SessionData::class]->getReturnQuery());
 	}
 
-	public function testGetUuid() {
+	public function testGetAuthUser_returnsId() {
 		$exampleId = uniqid("example-id-");
 
 		$userData = self::createMock(UserResponseData::class);
@@ -164,7 +201,7 @@ class AuthenticatorTest extends TestCase {
 		self::assertEquals($exampleId, $sut->getAuthUser()->id);
 	}
 
-	public function testGetEmailThrowsExceptionWhenNotLoggedIn() {
+	public function testGetAuthUser_throwsWhenNotLoggedIn() {
 		$_SESSION = [];
 		$sut = new Authenticator(
 			"test-key",
@@ -174,7 +211,7 @@ class AuthenticatorTest extends TestCase {
 		$sut->getAuthUser()->email;
 	}
 
-	public function testGetEmail() {
+	public function testGetAuthUser_returnsEmail() {
 		$expectedEmail = "example@example.com";
 
 		$userData = self::createMock(UserResponseData::class);
@@ -195,7 +232,7 @@ class AuthenticatorTest extends TestCase {
 	}
 
 	#[WithoutErrorHandler]
-	public function testGetUserEmitsDeprecationAndReturnsCompatibilityUser():void {
+	public function testGetUser_emitsDeprecationAndReturnsCompatibilityUser():void {
 		$_SESSION = [
 			SessionData::class => new SessionData(
 				new Token(str_repeat("s", 32)),
@@ -225,7 +262,7 @@ class AuthenticatorTest extends TestCase {
 	}
 
 	#[WithoutErrorHandler]
-	public function testDeprecatedGetUserStillThrowsWhenNotLoggedIn():void {
+	public function testGetUser_throwsWhenNotLoggedIn():void {
 		$_SESSION = [];
 		$sut = new Authenticator("deployment_" . str_repeat("s", 32), "/");
 		set_error_handler(static fn():bool => true);
@@ -239,7 +276,7 @@ class AuthenticatorTest extends TestCase {
 		}
 	}
 
-	public function testCompleteAuthNotAffectedByQueryString() {
+	public function testConstruct_loginResponsePreservesQueryString() {
 		$redirectHandler = self::createMock(RedirectHandler::class);
 		$redirectHandler->expects(self::never())
 			->method("redirect");
@@ -254,7 +291,7 @@ class AuthenticatorTest extends TestCase {
 		);
 	}
 
-	public function testAcceptsPsrUriInterfaceForCurrentUriPath():void {
+	public function testConstruct_acceptsPsrUriInterface():void {
 		$_SESSION = [];
 		$currentUriPath = self::createStub(UriInterface::class);
 		$currentUriPath->method("__toString")->willReturn("/psr-path");
@@ -272,7 +309,7 @@ class AuthenticatorTest extends TestCase {
 		);
 	}
 
-	public function testSetReturnUriOverridesLoginReturnLocation():void {
+	public function testSetReturnUri_overridesLoginReturnLocation():void {
 		$_SESSION = [];
 		$sut = new Authenticator("deployment_secret", "/current-path");
 		$sut->setReturnUri("/after-login?source=authwave");
@@ -302,7 +339,7 @@ class AuthenticatorTest extends TestCase {
 		);
 	}
 
-	public function testCompleteAuthNotLoggedIn() {
+	public function testConstruct_withoutLoginResponse() {
 		$currentUri = "/?"
 			. Authenticator::RESPONSE_QUERY_PARAMETER
 			. "=0123456789abcdef";
@@ -325,7 +362,7 @@ class AuthenticatorTest extends TestCase {
 // In this example, we make our own query string parameter, which will NOT
 // decrypt properly, and should throw an exception to prevent unauthorised
 // access.
-	public function testCompleteAuth() {
+	public function testConstruct_withLoginResponse() {
 		$keyBytes = str_repeat("0", SODIUM_CRYPTO_SECRETBOX_KEYBYTES);
 		$ivBytes = str_repeat("1", SODIUM_CRYPTO_SECRETBOX_NONCEBYTES);
 		$plainTextMessage = json_encode([
@@ -393,7 +430,7 @@ class AuthenticatorTest extends TestCase {
 		self::assertSame("person@example.com", $authenticatedUser->email);
 	}
 
-	public function testAuthenticationCallbackIsAtMostOnceWhenItThrows():void {
+	public function testConstruct_callbackRunsAtMostOnceWhenItThrows():void {
 		$keyBytes = str_repeat("0", SODIUM_CRYPTO_SECRETBOX_KEYBYTES);
 		$ivBytes = str_repeat("1", SODIUM_CRYPTO_SECRETBOX_NONCEBYTES);
 		$encryptedMessage = sodium_crypto_secretbox(
@@ -445,7 +482,7 @@ class AuthenticatorTest extends TestCase {
 		self::assertSame("tab=orders", $_SESSION[SessionData::class]->getReturnQuery());
 	}
 
-	public function testLoginDoesNothingWhenAlreadyLoggedIn() {
+	public function testLogin_alreadyLoggedIn() {
 		$sessionData = self::createMock(SessionData::class);
 		$sessionData->method("getData")
 			->willReturn(self::createMock(UserResponseData::class));
@@ -480,17 +517,7 @@ class AuthenticatorTest extends TestCase {
 		$sut->login($token);
 	}
 
-	public function testGetUuidThrowsExceptionWhenNotLoggedIn() {
-		$_SESSION = [];
-		$sut = new Authenticator(
-			"test-key",
-			"/"
-		);
-		self::expectException(NotLoggedInException::class);
-		$sut->getAuthUser()->id;
-	}
-
-	public function testLogoutCallsLogoutUri() {
+	public function testLogout_usesLogoutUri() {
 		$sessionData = self::createMock(SessionData::class);
 		$_SESSION = [
 			SessionData::class => $sessionData
@@ -535,7 +562,7 @@ class AuthenticatorTest extends TestCase {
 		self::assertArrayNotHasKey(SessionData::class, $_SESSION);
 	}
 
-	public function testLogoutCreatesDefaultToken():void {
+	public function testLogout_createsDefaultToken():void {
 		$_SESSION = [];
 		$redirectHandler = self::createMock(RedirectHandler::class);
 		$redirectHandler->expects(self::once())->method("redirect");
@@ -550,7 +577,7 @@ class AuthenticatorTest extends TestCase {
 		self::assertArrayNotHasKey(SessionData::class, $_SESSION);
 	}
 
-	public function testLogoutFakeUserClearsSessionWithoutRedirect():void {
+	public function testLogout_clearsFakeUserWithoutRedirect():void {
 		$token = new Token(str_repeat("s", 32));
 		$_SESSION = [
 			SessionData::class => new SessionData(
@@ -572,7 +599,7 @@ class AuthenticatorTest extends TestCase {
 		self::assertArrayNotHasKey(SessionData::class, $_SESSION);
 	}
 
-	public function testFakeLoginStoresUserAndRemovesCurrentQuery():void {
+	public function testFakeLogin_storesUserAndRemovesCurrentQuery():void {
 		$_SESSION = [];
 		$redirectHandler = self::createMock(RedirectHandler::class);
 		$redirectHandler->expects(self::once())
@@ -597,7 +624,7 @@ class AuthenticatorTest extends TestCase {
 	}
 
 	#[\PHPUnit\Framework\Attributes\DataProvider("provideLogoutRedirect")]
-	public function testLogoutUsesRequestedRedirect(
+	public function testLogout_usesRequestedRedirect(
 		string|UriInterface $redirectTo,
 		string $expectedRedirect,
 	):void {
@@ -649,7 +676,7 @@ class AuthenticatorTest extends TestCase {
 		];
 	}
 
-	public function testLoginRedirects() {
+	public function testLogin_redirects() {
 		$_SESSION = [];
 
 		$redirectHandler = self::createMock(RedirectHandler::class);
@@ -681,7 +708,7 @@ class AuthenticatorTest extends TestCase {
 		$sut->login($token);
 	}
 
-	public function testLoginRedirectsLocalhost() {
+	public function testLogin_redirectsLocalhost() {
 		$_SESSION = [];
 
 		$redirectHandler = self::createMock(RedirectHandler::class);
